@@ -28,6 +28,11 @@ namespace EdenInstaller
         string installDir;
         /// <summary>Wo Eden schon fertig eingerichtet ist, sonst null. Dann gibt es die Startansicht.</summary>
         string installedDir;
+        /// <summary>Was die Merkdatei als installiert kennt, sonst null.</summary>
+        ReleaseSet installedVersions;
+        /// <summary>Suche nach den neuesten Versionen, läuft ab dem Start im Hintergrund.</summary>
+        Task<ReleaseSet> releases;
+        bool onHome;
         Phase phase;
         CancellationTokenSource cts;
         CancellationTokenSource importCts;
@@ -46,10 +51,6 @@ namespace EdenInstaller
             ResultsList.ItemsSource = imports;
             AddGameHint.Text = AddGameHintText;
 
-            ChipEden.Text = "Eden v" + EdenSetup.EdenVersion;
-            ChipFirmware.Text = "Firmware " + EdenSetup.FirmwareVersion;
-            ChipKeys.Text = "Keys " + EdenSetup.KeysVersion;
-
             // Eden selbst kommt zu den Programmen des Benutzers (ohne Adminrechte), auf den Desktop nur die Verknüpfung.
             string localAppData = opts.IsSandbox
                 ? Path.Combine(opts.SandboxDir, "LocalAppData")
@@ -57,6 +58,9 @@ namespace EdenInstaller
             installDir = Path.Combine(localAppData, "Programs", "Eden");
             stateFile = Path.Combine(localAppData, "Eden-Installer", "installation.ini");
             installedDir = FindInstallation();
+            installedVersions = InstallState.LoadVersions(stateFile);
+            releases = ReleaseFinder.FindAsync(CancellationToken.None);
+            ShowReleasesWhenFound();
             MaxHeight = SystemParameters.WorkArea.Height;
 
             if (installedDir != null)
@@ -85,7 +89,7 @@ namespace EdenInstaller
             if (File.Exists(standard.EdenExe) && Directory.Exists(standard.GamesDir) && Directory.Exists(standard.DlcDir))
             {
                 Log.Write("Installation ohne Merkdatei gefunden: " + standard.InstallDir);
-                InstallState.Save(stateFile, standard);
+                InstallState.Save(stateFile, standard, null);
                 return standard.InstallDir;
             }
             return null;
@@ -95,6 +99,9 @@ namespace EdenInstaller
 
         void ShowHome(string message, string brushKey)
         {
+            onHome = true;
+            UpdateChips();
+            UpdateNews();
             InstallPanel.Visibility = Visibility.Collapsed;
             HomePanel.Visibility = Visibility.Visible;
             HomeFolderText.Text = installDir;
@@ -105,6 +112,9 @@ namespace EdenInstaller
 
         void ShowInstall()
         {
+            onHome = false;
+            UpdateChips();
+            UpdateNews();
             HomePanel.Visibility = Visibility.Collapsed;
             InstallPanel.Visibility = Visibility.Visible;
             foreach (var s in steps)
@@ -132,6 +142,64 @@ namespace EdenInstaller
                 : $"Einsortiert: {games} {(games == 1 ? "Spiel" : "Spiele")}, dazu {extras} {(extras == 1 ? "Update oder DLC" : "Updates und DLCs")}.";
         }
 
+        // ---------------------------------------------------------------- Versionen
+
+        ReleaseSet Found => releases.Status == TaskStatus.RanToCompletion ? releases.Result : null;
+
+        async void ShowReleasesWhenFound()
+        {
+            var task = releases;
+            try { await task; }
+            catch (OperationCanceledException) { return; }
+            if (task != releases) return;   // inzwischen läuft eine neue Suche
+            UpdateChips();
+            UpdateNews();
+            if (!onHome && phase == Phase.Ready) ProgressLabel.Text = ReadyLabel();
+        }
+
+        /// <summary>Startansicht: was installiert ist. Installation: was gleich geladen wird.</summary>
+        void UpdateChips()
+        {
+            ReleaseSet shown = onHome ? installedVersions : Found;
+            bool searching = !onHome && shown == null;
+            ChipEden.Text = Chip("Eden v", "Eden", shown?.EdenVersion, searching);
+            ChipFirmware.Text = Chip("Firmware ", "Firmware", shown?.FirmwareVersion, searching);
+            ChipKeys.Text = Chip("Keys ", "Keys", shown?.KeysVersion, searching);
+            string waiting = !onHome ? Found?.NewerFirmwareWithoutKeys : null;
+            ChipFirmware.ToolTip = waiting != null
+                ? $"Firmware {waiting} gibt es schon, passende Keys aber noch nicht. Firmware und Keys müssen gleich sein."
+                : null;
+        }
+
+        static string Chip(string prefix, string name, string version, bool searching) =>
+            version != null ? prefix + version : searching ? name + " …" : name;
+
+        /// <summary>In der Startansicht ein Hinweis, wenn es neuere Versionen gibt. Firmware zählt nur mit passenden Keys.</summary>
+        void UpdateNews()
+        {
+            ReleaseSet latest = Found;
+            var news = new List<string>();
+            if (onHome && latest != null && installedVersions != null)
+            {
+                if (ReleaseFinder.IsNewer(latest.EdenVersion, installedVersions.EdenVersion))
+                    news.Add("Eden v" + latest.EdenVersion);
+                if (ReleaseFinder.IsNewer(latest.FirmwareVersion, installedVersions.FirmwareVersion)
+                    || ReleaseFinder.IsNewer(latest.KeysVersion, installedVersions.KeysVersion))
+                    news.Add("Firmware und Keys " + latest.FirmwareVersion);
+            }
+            NewsText.Text = news.Count == 0 ? ""
+                : $"Neu verfügbar: {string.Join(" sowie ", news)}. Über „Neu installieren“ holst du es, deine Spiele bleiben drin.";
+            NewsText.Visibility = news.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        string ReadyLabel()
+        {
+            ReleaseSet found = Found;
+            return found?.NewerFirmwareWithoutKeys != null
+                ? $"Bereit. Für Firmware {found.NewerFirmwareWithoutKeys} gibt es noch keine Keys, also {found.FirmwareVersion}."
+                : "Bereit";
+        }
+
         // ---------------------------------------------------------------- Installation
 
         async void StartInstall()
@@ -145,11 +213,25 @@ namespace EdenInstaller
             SetPhase(Phase.Running);
             cts = new CancellationTokenSource();
             var paths = BuildPaths();
-            var setup = new EdenSetup(paths, this);
+            EdenSetup setup = null;
             try
             {
+                // Ging die Suche beim Start nicht (etwa ohne Internet), jetzt noch einmal
+                if (releases.IsCompleted && (Found == null || Found.UsedBuiltIn))
+                {
+                    releases = ReleaseFinder.FindAsync(cts.Token);
+                    ShowReleasesWhenFound();
+                }
+                if (!releases.IsCompleted) SetProgress(-1, "Suche die neuesten Versionen", null, "");
+                await Task.WhenAny(releases, Task.Delay(Timeout.Infinite, cts.Token));
+                cts.Token.ThrowIfCancellationRequested();
+                ReleaseSet found = releases.Result;
+                UpdateChips();
+
+                setup = new EdenSetup(paths, found, this);
                 await setup.RunAsync(cts.Token);
-                InstallState.Save(stateFile, paths);   // ab jetzt startet der Installer gleich mit den Knöpfen
+                InstallState.Save(stateFile, paths, found);   // ab jetzt startet der Installer gleich mit den Knöpfen
+                installedVersions = found;
                 installedDir = installDir;
                 SetPhase(Phase.Done);
                 ShowHome("Installation abgeschlossen. Mit „Spiel hinzufügen“ kommen Spiele, Updates und DLCs gleich in den richtigen Ordner.",
@@ -159,7 +241,7 @@ namespace EdenInstaller
             catch (Exception ex) when (ex is OperationCanceledException || cts.IsCancellationRequested)
             {
                 Log.Write("Abgebrochen");
-                setup.FailCurrentStep("Abgebrochen");
+                setup?.FailCurrentStep("Abgebrochen");
                 SetPhase(Phase.Failed, "Installation abgebrochen.");
                 if (closeAfterCancel) Close();
             }
@@ -167,13 +249,13 @@ namespace EdenInstaller
             {
                 Log.Write("Fehler: " + ex);
                 string message = EdenSetup.Describe(ex);
-                setup.FailCurrentStep(message);
+                setup?.FailCurrentStep(message);
                 SetPhase(Phase.Failed, "Das hat nicht geklappt. Details stehen beim roten Schritt.");
                 if (opts.IsSandbox) FinishSandbox("3-fehler.png", 1);
             }
             finally
             {
-                setup.CleanupTemp();
+                setup?.CleanupTemp();
             }
         }
 
@@ -210,8 +292,8 @@ namespace EdenInstaller
                 case Phase.Ready:
                     PrimaryButton.Content = "Installieren";
                     SecondaryButton.Content = leave;
-                    SetStatus("Lädt rund 370 MB, das dauert je nach Internet ein paar Minuten.", "MutedBrush");
-                    ProgressLabel.Text = "Bereit";
+                    SetStatus("Lädt rund 400 MB, das dauert je nach Internet ein paar Minuten.", "MutedBrush");
+                    ProgressLabel.Text = ReadyLabel();
                     ProgressValue.Text = "";
                     Bar.Value = 0;
                     break;
@@ -522,8 +604,11 @@ namespace EdenInstaller
 
         // ---------------------------------------------------------------- Testmodus
 
-        void RunSandbox()
+        async void RunSandbox()
         {
+            // Erst die Versionssuche abwarten, damit die Bilder die gefundenen Versionen zeigen
+            try { await releases; } catch (OperationCanceledException) { }
+            await Task.Delay(300);
             if (installedDir == null)
             {
                 Capture("1-start.png");

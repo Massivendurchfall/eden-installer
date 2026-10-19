@@ -8,12 +8,20 @@ Richtet den Switch Emulator [Eden](https://eden-emu.dev) mit einem Klick ein und
 
 Einfach die exe starten und auf „Installieren“ klicken. Adminrechte braucht es nicht.
 
-1. Eden v0.2.1 wird heruntergeladen und nach `%LOCALAPPDATA%\Programs\Eden` entpackt. Auf den Desktop kommt nur die Verknüpfung „Eden“.
+1. Die neueste Eden-Version wird heruntergeladen und nach `%LOCALAPPDATA%\Programs\Eden` entpackt. Auf den Desktop kommt nur die Verknüpfung „Eden“.
 2. Im Eden-Ordner entstehen `Games` und `Updates und DLCs`. Beide werden in Eden eingetragen, als Spieleverzeichnis und als externer Inhalt.
 3. Eden startet einmal, legt seine Ordner an und wird wieder geschlossen.
-4. Keys und Firmware 22.5.0 werden heruntergeladen und nach `%APPDATA%\eden` gelegt, genau so, wie Eden es selbst machen würde.
+4. Keys und Firmware werden heruntergeladen und nach `%APPDATA%\eden` gelegt, genau so, wie Eden es selbst machen würde.
 
 Der Ordner lässt sich vorher über „Ändern“ anpassen.
+
+### Immer die neuesten Versionen
+
+Beim Start schaut der Installer nach, was es gerade gibt: Eden auf [git.eden-emu.dev](https://git.eden-emu.dev/eden-emu/eden/releases), die Firmware bei [THZoria/NX_Firmware](https://github.com/THZoria/NX_Firmware/releases), die Keys auf prodkeys.net. Die gefundenen Versionen stehen oben im Fenster.
+
+Firmware und Keys müssen dieselbe Version haben, sonst startet nichts. Kommt eine neue Firmware heraus, bevor es Keys dafür gibt, nimmt der Installer deshalb die neueste Firmware, zu der es schon passende Keys gibt. Sobald die Keys da sind, wechselt er von selbst.
+
+Ist die Suche nicht möglich, etwa ohne Internet, nimmt er ein eingebautes Paar, das sicher zusammenpasst.
 
 ## Spiel hinzufügen
 
@@ -21,7 +29,9 @@ Ist Eden schon eingerichtet, öffnet der Installer direkt die Startansicht:
 
 - **Spiel hinzufügen**: ZIP, RAR, 7z, NSP, NSZ, XCI oder XCZ auswählen, gern mehrere auf einmal. Mehrteilige Archive (`.part1.rar`, `.part2.rar` und so weiter) werden zusammen entpackt. Basisspiele kommen nach `Games`, Updates und DLCs nach `Updates und DLCs`.
 - **Eden starten**, **Games öffnen**, **Updates öffnen**
-- **Neu installieren**, falls mal etwas kaputt ist
+- **Neu installieren**, falls mal etwas kaputt ist oder es Neues gibt
+
+Gibt es eine neuere Eden-Version oder ein neueres passendes Paar aus Firmware und Keys, steht das in der Startansicht. Über „Neu installieren“ kommt es drauf, die Spiele bleiben dabei, wo sie sind.
 
 Erkannt wird am Inhalt der Datei oder an der Title-ID im Dateinamen. Klappt beides nicht, fragt der Installer kurz nach. Einzelne NSP- oder XCI-Dateien werden verschoben. Archive bleiben liegen, am Ende fragt der Installer, ob sie in den Papierkorb sollen.
 

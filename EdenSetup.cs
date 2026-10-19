@@ -57,52 +57,64 @@ namespace EdenInstaller
     /// </summary>
     public static class InstallState
     {
-        const string DirKey = "InstallDir=";
-
         /// <summary>Der eingetragene Eden-Ordner oder null.</summary>
-        public static string Load(string file)
+        public static string Load(string file) => Read(file).TryGetValue("InstallDir", out string dir) ? dir : null;
+
+        /// <summary>Installierte Versionen (ohne Links) oder null, wenn die Merkdatei keine kennt.</summary>
+        public static ReleaseSet LoadVersions(string file)
         {
-            try
+            var values = Read(file);
+            values.TryGetValue("EdenVersion", out string eden);
+            values.TryGetValue("FirmwareVersion", out string firmware);
+            if (eden == null && firmware == null) return null;
+            // Ältere Merkdateien kennen keine Keys-Version, damals waren Keys und Firmware gleich
+            return new ReleaseSet
             {
-                if (!File.Exists(file)) return null;
-                foreach (string line in File.ReadAllLines(file, Encoding.UTF8))
-                    if (line.StartsWith(DirKey, StringComparison.OrdinalIgnoreCase))
-                        return line.Substring(DirKey.Length).Trim();
-            }
-            catch (Exception ex) { Log.Write("Merkdatei nicht lesbar: " + ex.Message); }
-            return null;
+                EdenVersion = eden,
+                FirmwareVersion = firmware,
+                KeysVersion = values.TryGetValue("KeysVersion", out string keys) ? keys : firmware,
+            };
         }
 
-        public static void Save(string file, SetupPaths p)
+        /// <param name="installed">null, wenn die Versionen unbekannt sind (Installation von vor der Merkdatei).</param>
+        public static void Save(string file, SetupPaths p, ReleaseSet installed)
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(file));
-                File.WriteAllLines(file, new[]
+                var lines = new List<string> { "[Eden Installer]", "InstallDir=" + p.InstallDir, "DataDir=" + p.DataDir };
+                if (installed != null)
                 {
-                    "[Eden Installer]",
-                    DirKey + p.InstallDir,
-                    "DataDir=" + p.DataDir,
-                    "EdenVersion=" + EdenSetup.EdenVersion,
-                    "FirmwareVersion=" + EdenSetup.FirmwareVersion,
-                    "Eingetragen=" + DateTime.Now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture),
-                }, new UTF8Encoding(false));
+                    lines.Add("EdenVersion=" + installed.EdenVersion);
+                    lines.Add("FirmwareVersion=" + installed.FirmwareVersion);
+                    lines.Add("KeysVersion=" + installed.KeysVersion);
+                }
+                lines.Add("Eingetragen=" + DateTime.Now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture));
+                Directory.CreateDirectory(Path.GetDirectoryName(file));
+                File.WriteAllLines(file, lines, new UTF8Encoding(false));
                 Log.Write("Merkdatei: " + file);
             }
             catch (Exception ex) { Log.Write("Merkdatei nicht geschrieben: " + ex.Message); }
+        }
+
+        static Dictionary<string, string> Read(string file)
+        {
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (File.Exists(file))
+                    foreach (string line in File.ReadAllLines(file, Encoding.UTF8))
+                    {
+                        int eq = line.IndexOf('=');
+                        if (eq > 0) values[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+                    }
+            }
+            catch (Exception ex) { Log.Write("Merkdatei nicht lesbar: " + ex.Message); }
+            return values;
         }
     }
 
     public sealed class EdenSetup
     {
-        public const string EdenVersion = "0.2.1";
-        public const string FirmwareVersion = "22.5.0";
-        public const string KeysVersion = "22.5.0";
-
-        public const string EdenUrl = "https://stable.eden-emu.dev/v0.2.1/Eden-Windows-v0.2.1-amd64-msvc-standard.zip";
-        public const string FirmwareUrl = "https://github.com/THZoria/NX_Firmware/releases/download/22.5.0/Firmware.22.5.0.zip";
-        public const string KeysUrl = "https://files.prodkeys.net/ProdKeys.NET-v22.5.0.zip";
-
         public static readonly string[] StepTitles =
         {
             "Eden herunterladen",
@@ -117,16 +129,18 @@ namespace EdenInstaller
         static readonly string[] LegacyEmulators = { "yuzu", "citron", "sudachi", "suyu" };
 
         static readonly CultureInfo De = CultureInfo.GetCultureInfo("de-DE");
-        static readonly HttpClient Http = CreateClient();
+        internal static readonly HttpClient Http = CreateClient();
 
         readonly SetupPaths p;
+        readonly ReleaseSet r;
         readonly IInstallerUi ui;
         readonly Stopwatch uiThrottle = Stopwatch.StartNew();
         int current = -1;
 
-        public EdenSetup(SetupPaths paths, IInstallerUi ui)
+        public EdenSetup(SetupPaths paths, ReleaseSet releases, IInstallerUi ui)
         {
             p = paths;
+            r = releases;
             this.ui = ui;
         }
 
@@ -134,13 +148,16 @@ namespace EdenInstaller
         {
             Log.Write($"Installationsordner: {p.InstallDir}");
             Log.Write($"Datenordner: {p.DataDir}");
+            // Firmware und Keys müssen immer genau dieselbe Version haben, sonst gibt es Probleme
+            if (r.FirmwareVersion != r.KeysVersion)
+                throw new InstallException($"Firmware {r.FirmwareVersion} und Keys {r.KeysVersion} passen nicht zusammen. Bitte den Installer neu starten.");
             CheckPreconditions();
             Directory.CreateDirectory(p.TempDir);
 
             Begin(0, "Lade von eden-emu.dev");
             string edenZip = Path.Combine(p.TempDir, "Eden.zip");
-            long edenBytes = await DownloadAsync(EdenUrl, edenZip, "Eden wird heruntergeladen", ct);
-            Finish(0, $"Eden v{EdenVersion}, {Size(edenBytes)}");
+            long edenBytes = await DownloadAsync(r.EdenUrl, edenZip, "Eden wird heruntergeladen", ct);
+            Finish(0, $"Eden v{r.EdenVersion}, {Size(edenBytes)}");
 
             Begin(1, "Entpacke in den Eden-Ordner");
             int edenFiles = await Task.Run(() => ExtractEden(edenZip, ct));
@@ -168,15 +185,17 @@ namespace EdenInstaller
 
             Begin(3, "Lade die Keys");
             string keysZip = Path.Combine(p.TempDir, "Keys.zip");
-            await DownloadAsync(KeysUrl, keysZip, "Keys werden heruntergeladen", ct);
+            await DownloadAsync(r.KeysUrl, keysZip, "Keys werden heruntergeladen", ct);
             List<string> keyFiles = await Task.Run(() => InstallKeys(keysZip));
             DeleteFile(keysZip);
-            Finish(3, $"{string.Join(" und ", keyFiles)} liegen im Ordner keys");
+            Finish(3, $"Keys {r.KeysVersion}, {string.Join(" und ", keyFiles)} liegen im Ordner keys");
 
             Begin(4, "Lade von GitHub");
             string firmwareZip = Path.Combine(p.TempDir, "Firmware.zip");
-            long firmwareBytes = await DownloadAsync(FirmwareUrl, firmwareZip, "Firmware wird heruntergeladen", ct);
-            Finish(4, $"Firmware {FirmwareVersion}, {Size(firmwareBytes)}");
+            long firmwareBytes = await DownloadAsync(r.FirmwareUrl, firmwareZip, "Firmware wird heruntergeladen", ct);
+            Finish(4, $"Firmware {r.FirmwareVersion}, {Size(firmwareBytes)}" + (r.NewerFirmwareWithoutKeys != null
+                ? $". Die neuere {r.NewerFirmwareWithoutKeys} hat noch keine passenden Keys"
+                : ""));
 
             Begin(5, "Kopiere die Systemdateien in Edens NAND");
             int ncaCount = await Task.Run(() => InstallFirmware(firmwareZip, ct));

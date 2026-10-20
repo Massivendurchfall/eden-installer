@@ -14,11 +14,13 @@ namespace EdenInstaller
 
             var opts = AppOptions.Parse(e.Args);
             Log.Init(opts.LogPath);
+            Log.Write("UI language: " + (L.German ? "German" : "English"));
 
             DispatcherUnhandledException += (s, a) =>
             {
-                Log.Write("Unerwarteter Fehler: " + a.Exception);
-                MessageBox.Show("Unerwarteter Fehler:\n" + a.Exception.Message + "\n\nDetails stehen in " + Log.FilePath,
+                Log.Write("Unexpected error: " + a.Exception);
+                MessageBox.Show(L.T("Unerwarteter Fehler:\n", "Unexpected error:\n") + a.Exception.Message
+                    + L.T("\n\nDetails stehen in ", "\n\nDetails are in ") + Log.FilePath,
                     "Eden Installer", MessageBoxButton.OK, MessageBoxImage.Error);
                 a.Handled = true;
             };
@@ -29,14 +31,14 @@ namespace EdenInstaller
         }
     }
 
-    /// <summary>Startparameter. Ohne Parameter ist alles normal, die beiden Schalter sind nur zum Testen.</summary>
+    /// <summary>Command line options. Without any, everything is normal, the switches are only for testing.</summary>
     public sealed class AppOptions
     {
-        /// <summary>Testmodus: alle Pfade landen in diesem Ordner, Eden wird nicht gestartet, die Installation läuft von selbst.</summary>
+        /// <summary>Test mode: all paths go into this folder, Eden is not started, the installation runs by itself.</summary>
         public string SandboxDir;
-        /// <summary>Testmodus: dieses Programm wird statt eden.exe gestartet und wieder geschlossen.</summary>
+        /// <summary>Test mode: this program is started and closed instead of eden.exe.</summary>
         public string FakeEdenExe;
-        /// <summary>Testmodus: diese Dateien werden gleich über "Spiel hinzufügen" einsortiert (Eden muss im Testordner stehen).</summary>
+        /// <summary>Test mode: these files are sorted in through "Add game" right away (Eden has to be in the test folder).</summary>
         public readonly System.Collections.Generic.List<string> ImportFiles = new System.Collections.Generic.List<string>();
 
         public bool IsSandbox => SandboxDir != null;
@@ -54,6 +56,7 @@ namespace EdenInstaller
                 if (a == "--sandbox" && i + 1 < args.Length) o.SandboxDir = Path.GetFullPath(args[++i]);
                 else if (a == "--fake-eden" && i + 1 < args.Length) o.FakeEdenExe = args[++i];
                 else if (a == "--import" && i + 1 < args.Length) o.ImportFiles.Add(Path.GetFullPath(args[++i]));
+                else if (a == "--lang" && i + 1 < args.Length) L.Force(args[++i]);   // de or en, otherwise Windows decides
             }
             return o;
         }
@@ -70,7 +73,7 @@ namespace EdenInstaller
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, $"Eden Installer gestartet am {DateTime.Now:dd.MM.yyyy HH:mm:ss}{Environment.NewLine}", new UTF8Encoding(true));
+                File.WriteAllText(path, $"Eden Installer started {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}", new UTF8Encoding(true));
             }
             catch { }
         }

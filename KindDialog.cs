@@ -7,7 +7,7 @@ using System.Windows.Media;
 
 namespace EdenInstaller
 {
-    /// <summary>Rückfrage, wenn eine Datei weder am Namen noch am Inhalt zu erkennen ist.</summary>
+    /// <summary>Asks when a file can be recognized neither by its name nor by its content.</summary>
     sealed class KindDialog : Window
     {
         public GameKind? Answer { get; private set; }
@@ -15,7 +15,7 @@ namespace EdenInstaller
         public KindDialog(Window owner, string fileName)
         {
             Owner = owner;
-            Title = "Spiel hinzufügen";
+            Title = L.T("Spiel hinzufügen", "Add game");
             SizeToContent = SizeToContent.WidthAndHeight;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -26,22 +26,24 @@ namespace EdenInstaller
             SourceInitialized += (s, e) => Look.DarkTitleBar(this);
 
             var panel = new StackPanel { Width = 470 };
-            panel.Children.Add(Text("Was ist diese Datei?", 16, "TextBrush", FontWeights.SemiBold, 0));
+            panel.Children.Add(Text(L.T("Was ist diese Datei?", "What is this file?"), 16, "TextBrush", FontWeights.SemiBold, 0));
             panel.Children.Add(Text(fileName, 13, "SubTextBrush", FontWeights.Normal, 6));
-            panel.Children.Add(Text("Weder am Namen noch am Inhalt war zu erkennen, ob es ein Spiel, ein Update oder ein DLC ist. "
-                + "Wähle selbst, in welchen Ordner sie kommt.", 12, "MutedBrush", FontWeights.Normal, 10));
+            panel.Children.Add(Text(L.T("Weder am Namen noch am Inhalt war zu erkennen, ob es ein Spiel, ein Update oder ein DLC ist. "
+                    + "Wähle selbst, in welchen Ordner sie kommt.",
+                "Neither the name nor the content shows whether this is a game, an update or a DLC. "
+                    + "Choose which folder it goes to."), 12, "MutedBrush", FontWeights.Normal, 10));
 
             var buttons = new UniformGrid { Columns = 4, Margin = new Thickness(-3, 18, -3, 0) };
-            buttons.Children.Add(Choice("Spiel", GameKind.Base, "PrimaryButton"));
+            buttons.Children.Add(Choice(L.T("Spiel", "Game"), GameKind.Base, "PrimaryButton"));
             buttons.Children.Add(Choice("Update", GameKind.Update, "SecondaryButton"));
             buttons.Children.Add(Choice("DLC", GameKind.Dlc, "SecondaryButton"));
-            buttons.Children.Add(Choice("Überspringen", null, "SecondaryButton"));
+            buttons.Children.Add(Choice(L.T("Überspringen", "Skip"), null, "SecondaryButton"));
             panel.Children.Add(buttons);
 
             Content = new Border { Background = Background, Padding = new Thickness(22, 18, 22, 20), Child = panel };
         }
 
-        /// <summary>Schließt mit dieser Antwort. null heißt überspringen, so wie das X oben rechts.</summary>
+        /// <summary>Closes with this answer. null means skip, just like the X in the corner.</summary>
         public void Choose(GameKind? kind)
         {
             Answer = kind;
@@ -76,14 +78,14 @@ namespace EdenInstaller
 
     static class Look
     {
-        /// <summary>Dunkle Titelleiste wie der Rest, unter Windows 11 auch in der Fensterfarbe.</summary>
+        /// <summary>Dark title bar like the rest, on Windows 11 also in the window color.</summary>
         public static void DarkTitleBar(Window window)
         {
             IntPtr hwnd = new WindowInteropHelper(window).Handle;
             int on = 1;
             if (Native.DwmSetWindowAttribute(hwnd, 20, ref on, sizeof(int)) != 0)
                 Native.DwmSetWindowAttribute(hwnd, 19, ref on, sizeof(int));
-            int caption = 0x00161012;   // #121016 als COLORREF (BGR)
+            int caption = 0x00161012;   // #121016 as COLORREF (BGR)
             Native.DwmSetWindowAttribute(hwnd, 35, ref caption, sizeof(int));
         }
     }

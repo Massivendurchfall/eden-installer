@@ -10,18 +10,18 @@ using System.Web.Script.Serialization;
 
 namespace EdenInstaller
 {
-    /// <summary>Was installiert wird: Eden sowie Firmware und Keys, die zueinander passen.</summary>
+    /// <summary>What gets installed: Eden plus firmware and keys that match each other.</summary>
     public sealed class ReleaseSet
     {
         public string EdenVersion, EdenUrl;
         public string FirmwareVersion, FirmwareUrl;
         public string KeysVersion, KeysUrl;
-        /// <summary>Gibt es schon eine neuere Firmware ohne passende Keys, steht ihre Version hier.</summary>
+        /// <summary>If there is already a newer firmware without matching keys, its version is here.</summary>
         public string NewerFirmwareWithoutKeys;
-        /// <summary>Die Suche im Netz ging nicht, es gelten (teils) die eingebauten Versionen.</summary>
+        /// <summary>The online search failed, the built-in versions apply (partly).</summary>
         public bool UsedBuiltIn;
 
-        /// <summary>Bekannt gutes Paar, falls die Suche nichts findet.</summary>
+        /// <summary>Known good set in case the search finds nothing.</summary>
         public static ReleaseSet BuiltIn() => new ReleaseSet
         {
             EdenVersion = "0.2.1",
@@ -35,30 +35,32 @@ namespace EdenInstaller
     }
 
     /// <summary>
-    /// Sucht beim Start die neuesten Versionen. Eden kommt aus den Releases auf git.eden-emu.dev, die Firmware aus
-    /// THZoria/NX_Firmware auf GitHub, die Keys von prodkeys.net. Firmware und Keys müssen immer genau dieselbe
-    /// Version haben, sonst gibt es Probleme. Deshalb gilt die neueste Firmware, für die es Keys derselben Version gibt.
+    /// Looks up the latest versions at startup. Eden comes from the releases on git.eden-emu.dev, the firmware from
+    /// THZoria/NX_Firmware on GitHub, the keys from prodkeys.net. Firmware and keys must always have exactly the same
+    /// version, anything else causes trouble. So the newest firmware wins for which keys of the same version exist.
     /// </summary>
     public static class ReleaseFinder
     {
         const string EdenApi = "https://git.eden-emu.dev/api/v1/repos/eden-emu/eden/releases/latest";
         const string FirmwareApi = "https://api.github.com/repos/THZoria/NX_Firmware/releases?per_page=20";
         const string KeysSite = "https://prodkeys.net/";
+        // This page lists all versions with direct links to files.prodkeys.net, the others are only a fallback
+        const string KeysListPage = "https://prodkeys.net/yuzu-prod-keys-update-6/";
         const string KeysFiles = "https://files.prodkeys.net/";
 
-        // Die Keys heißen mal "ProdKeys.NET-v22.5.0.zip", mal "ProdKeys.Net-21.2.0.zip" oder "Prodkeys.NET_v21-0-0.zip"
+        // The keys are named "ProdKeys.NET-v22.5.0.zip", "ProdKeys.Net-21.2.0.zip" or "Prodkeys.NET_v21-0-0.zip"
         static readonly Regex VersionInName = new Regex(@"(?<!\d)(\d{1,2})[.\-_](\d{1,2})[.\-_](\d{1,2})(?!\d)");
         static readonly Regex KeysZipLink = new Regex(@"https://files\.prodkeys\.net/[^""'\s<>]*?keys[^""'\s<>]*?\.zip", RegexOptions.IgnoreCase);
         static readonly Regex KeysPageLink = new Regex(@"https://prodkeys\.net/[a-z0-9\-]*prod-keys[a-z0-9\-]*/", RegexOptions.IgnoreCase);
         static readonly Regex EdenWindowsZip = new Regex(@"^Eden-Windows-.+-amd64-msvc-standard\.zip$", RegexOptions.IgnoreCase);
         static readonly Regex EdenAnyAmd64Zip = new Regex(@"^Eden-Windows-.+-amd64-.+\.zip$", RegexOptions.IgnoreCase);
 
-        /// <summary>Wirft nur beim Abbrechen. Was nicht zu finden ist, kommt aus den eingebauten Versionen.</summary>
+        /// <summary>Only throws on cancel. Whatever can't be found comes from the built-in versions.</summary>
         public static async Task<ReleaseSet> FindAsync(CancellationToken ct)
         {
             var builtIn = ReleaseSet.BuiltIn();
             var set = new ReleaseSet();
-            Log.Write("Suche die neuesten Versionen");
+            Log.Write("Looking for the latest versions");
 
             try
             {
@@ -66,7 +68,7 @@ namespace EdenInstaller
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                Log.Write("  Eden nicht gefunden, nehme v" + builtIn.EdenVersion + ": " + ex.Message);
+                Log.Write("  Eden not found, using v" + builtIn.EdenVersion + ": " + ex.Message);
                 set.EdenVersion = builtIn.EdenVersion;
                 set.EdenUrl = builtIn.EdenUrl;
                 set.UsedBuiltIn = true;
@@ -78,7 +80,7 @@ namespace EdenInstaller
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                Log.Write("  Firmware und Keys nicht gefunden, nehme " + builtIn.FirmwareVersion + ": " + ex.Message);
+                Log.Write("  Firmware and keys not found, using " + builtIn.FirmwareVersion + ": " + ex.Message);
                 set.FirmwareVersion = builtIn.FirmwareVersion;
                 set.FirmwareUrl = builtIn.FirmwareUrl;
                 set.KeysVersion = builtIn.KeysVersion;
@@ -90,7 +92,7 @@ namespace EdenInstaller
             Log.Write($"  Firmware {set.FirmwareVersion}: {set.FirmwareUrl}");
             Log.Write($"  Keys {set.KeysVersion}: {set.KeysUrl}");
             if (set.NewerFirmwareWithoutKeys != null)
-                Log.Write($"  Firmware {set.NewerFirmwareWithoutKeys} gibt es schon, Keys dafür noch nicht");
+                Log.Write($"  Firmware {set.NewerFirmwareWithoutKeys} is already out, keys for it are not yet");
             return set;
         }
 
@@ -102,7 +104,7 @@ namespace EdenInstaller
             var zip = assets.FirstOrDefault(a => EdenWindowsZip.IsMatch(a.name));
             if (zip.url == null)
                 zip = assets.FirstOrDefault(a => EdenAnyAmd64Zip.IsMatch(a.name) && a.name.IndexOf("rog-ally", StringComparison.OrdinalIgnoreCase) < 0);
-            if (zip.url == null) throw new InvalidDataException($"Release {tag} hat kein Windows-Paket");
+            if (zip.url == null) throw new InvalidDataException($"Release {tag} has no Windows package");
             return (tag.TrimStart('v', 'V'), zip.url);
         }
 
@@ -116,17 +118,17 @@ namespace EdenInstaller
                 var zip = Assets(release).FirstOrDefault(a => a.name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
                 if (version != null && zip.url != null) firmware.Add((version, zip.url));
             }
-            if (firmware.Count == 0) throw new InvalidDataException("keine Firmware-Releases");
+            if (firmware.Count == 0) throw new InvalidDataException("no firmware releases");
             firmware = firmware.OrderByDescending(f => f.version).ToList();
 
             var keys = await FindKeysAsync(firmware.Select(f => f.version).ToList(), ct).ConfigureAwait(false);
-            if (keys.Count == 0) throw new InvalidDataException("keine Keys gefunden");
+            if (keys.Count == 0) throw new InvalidDataException("no keys found");
             Log.Write("  Firmware online: " + string.Join(", ", firmware.Take(6).Select(f => f.version)));
             Log.Write("  Keys online: " + string.Join(", ", keys.Keys.OrderByDescending(v => v).Take(6)));
 
-            // Nur genau gleiche Versionen, sonst gibt es Probleme. Gibt es kein solches Paar, gilt das eingebaute.
+            // Only exactly equal versions, anything else causes trouble. Without such a pair the built-in one applies.
             var pick = firmware.FirstOrDefault(f => keys.ContainsKey(f.version));
-            if (pick.url == null) throw new InvalidDataException("keine Firmware mit genau gleichen Keys");
+            if (pick.url == null) throw new InvalidDataException("no firmware with exactly matching keys");
 
             set.FirmwareVersion = pick.version.ToString();
             set.FirmwareUrl = pick.url;
@@ -135,7 +137,10 @@ namespace EdenInstaller
             if (firmware[0].version > pick.version) set.NewerFirmwareWithoutKeys = firmware[0].version.ToString();
         }
 
-        /// <summary>Version zu Download-Link. Erst die Links auf prodkeys.net, dann für neuere Firmware die üblichen Namen direkt.</summary>
+        /// <summary>
+        /// Version to download link. First the version list on prodkeys.net, if that fails the pages linked from the
+        /// home page. Then, for newer firmware, the usual file names directly.
+        /// </summary>
         static async Task<Dictionary<Version, string>> FindKeysAsync(List<Version> firmware, CancellationToken ct)
         {
             var found = new Dictionary<Version, string>();
@@ -148,19 +153,26 @@ namespace EdenInstaller
                 }
             }
 
-            try
+            try { Collect(await GetTextAsync(KeysListPage, ct).ConfigureAwait(false)); }
+            catch (Exception ex) when (!ct.IsCancellationRequested) { Log.Write("  " + KeysListPage + ": " + ex.Message); }
+
+            if (found.Count == 0)
             {
-                string home = await GetTextAsync(KeysSite, ct).ConfigureAwait(false);
-                Collect(home);
-                var pages = KeysPageLink.Matches(home).Cast<Match>().Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(p => p.IndexOf("eden", StringComparison.OrdinalIgnoreCase) >= 0 ? 0 : 1).Take(4);
-                foreach (string page in pages)
+                try
                 {
-                    try { Collect(await GetTextAsync(page, ct).ConfigureAwait(false)); }
-                    catch (Exception ex) when (!ct.IsCancellationRequested) { Log.Write("  " + page + ": " + ex.Message); }
+                    string home = await GetTextAsync(KeysSite, ct).ConfigureAwait(false);
+                    Collect(home);
+                    var pages = KeysPageLink.Matches(home).Cast<Match>().Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Where(p => !p.Equals(KeysListPage, StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(p => p.IndexOf("eden", StringComparison.OrdinalIgnoreCase) >= 0 ? 0 : 1).Take(4);
+                    foreach (string page in pages)
+                    {
+                        try { Collect(await GetTextAsync(page, ct).ConfigureAwait(false)); }
+                        catch (Exception ex) when (!ct.IsCancellationRequested) { Log.Write("  " + page + ": " + ex.Message); }
+                    }
                 }
+                catch (Exception ex) when (!ct.IsCancellationRequested) { Log.Write("  prodkeys.net not readable: " + ex.Message); }
             }
-            catch (Exception ex) when (!ct.IsCancellationRequested) { Log.Write("  prodkeys.net nicht lesbar: " + ex.Message); }
 
             Version newest = found.Count > 0 ? found.Keys.Max() : new Version(0, 0, 0);
             foreach (Version v in firmware.Where(v => v > newest).Take(4))
@@ -181,7 +193,7 @@ namespace EdenInstaller
                 : null;
         }
 
-        /// <summary>True, wenn latest eine neuere Version ist. Bei unlesbaren Versionen lieber false.</summary>
+        /// <summary>True if latest is a newer version. With unreadable versions rather false.</summary>
         public static bool IsNewer(string latest, string installed)
         {
             Version a = ParseVersion(latest), b = ParseVersion(installed);
@@ -201,7 +213,7 @@ namespace EdenInstaller
                 timeout.CancelAfter(TimeSpan.FromSeconds(15));
                 using (var resp = await EdenSetup.Http.GetAsync(url, timeout.Token).ConfigureAwait(false))
                 {
-                    if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"{(int)resp.StatusCode} bei {url}");
+                    if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"{(int)resp.StatusCode} at {url}");
                     return await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                 }
             }

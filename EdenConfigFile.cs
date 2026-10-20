@@ -7,11 +7,11 @@ using System.Text;
 namespace EdenInstaller
 {
     /// <summary>
-    /// Kleiner Bearbeiter für Edens config\qt-config.ini. Die Ordnerlisten stehen dort im Abschnitt [UI]
-    /// als Arrays, so wie Edens QtConfig sie schreibt:
-    ///   Paths\gamedirs\1\path=...              (Spieleverzeichnisse)
-    ///   Paths\external_content_dirs\1\path=... (Externer Inhalt: Updates und DLCs ohne NAND-Installation)
-    /// plus jeweils ...\size. Alles andere in der Datei bleibt Zeile für Zeile unverändert.
+    /// Small editor for Eden's config\qt-config.ini. The folder lists live in the [UI] section
+    /// as arrays, the way Eden's QtConfig writes them:
+    ///   Paths\gamedirs\1\path=...              (game folders)
+    ///   Paths\external_content_dirs\1\path=... (external content: updates and DLCs without NAND install)
+    /// plus ...\size for each. Everything else in the file stays unchanged line by line.
     /// </summary>
     sealed class EdenConfigFile
     {
@@ -43,7 +43,7 @@ namespace EdenInstaller
             }
         }
 
-        /// <summary>Spieleverzeichnis mit "Unterordner durchsuchen". False, wenn es schon drinsteht.</summary>
+        /// <summary>Game folder with "scan subfolders". False if it is already there.</summary>
         public bool AddGameDir(string dir)
         {
             string value = IniPath(dir);
@@ -51,7 +51,7 @@ namespace EdenInstaller
             if (Contains(GameDirs, size, value)) return false;
 
             var dirs = new List<(string path, bool deepScan)>();
-            // Bei leerer Liste legt Eden SD-Karte und NAND selbst an, sonst nicht. Also mit eintragen.
+            // With an empty list Eden adds SD card and NAND by itself, otherwise not. So add them too.
             if (size == 0)
                 foreach (string special in new[] { "SDMC", "UserNAND", "SysNAND" }) dirs.Add((special, false));
             dirs.Add((value, true));
@@ -70,7 +70,7 @@ namespace EdenInstaller
             return true;
         }
 
-        /// <summary>Ordner für Updates und DLCs ("Externer Inhalt"). False, wenn er schon drinsteht.</summary>
+        /// <summary>Folder for updates and DLCs ("external content"). False if it is already there.</summary>
         public bool AddExternalContentDir(string dir)
         {
             string value = IniPath(dir);
@@ -115,7 +115,7 @@ namespace EdenInstaller
             return false;
         }
 
-        /// <summary>Neue Einträge und die neue Anzahl ans Ende des Abschnitts, die alte size-Zeile fliegt raus.</summary>
+        /// <summary>New entries and the new count go to the end of the section, the old size line is removed.</summary>
         void AppendToArray(string array, List<string> added, int size)
         {
             int end = SectionEnd();
@@ -135,7 +135,7 @@ namespace EdenInstaller
             return eq > 0 ? line.Substring(0, eq).Trim() : null;
         }
 
-        /// <summary>Wie Edens AdjustOutputString: Schrägstriche nach vorn, bei Sonderzeichen in Anführungszeichen.</summary>
+        /// <summary>Like Eden's AdjustOutputString: forward slashes, in quotes when there are special characters.</summary>
         static string IniPath(string path)
         {
             string s = path.Replace('\\', '/');

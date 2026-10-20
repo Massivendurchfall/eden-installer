@@ -18,37 +18,38 @@ namespace EdenInstaller
 
     public interface IImportUi
     {
-        /// <summary>fraction null heißt: Fortschritt unbekannt.</summary>
+        /// <summary>A null fraction means: progress unknown.</summary>
         void Progress(string label, double? fraction, string value);
-        /// <summary>Neue Zeile in der Liste, eine pro ausgewählter Datei.</summary>
+        /// <summary>New row in the list, one per selected file.</summary>
         ImportItem AddItem(string name);
-        /// <summary>Rückfrage, wenn sich eine Datei nicht erkennen lässt. null heißt überspringen.</summary>
+        /// <summary>Asks what a file is when it can't be recognized. null means skip.</summary>
         GameKind? Ask(string fileName);
     }
 
     public sealed class ImportResult
     {
         public int Games, Updates, Dlcs, Already, Skipped, Failed;
-        /// <summary>Archive (samt weiteren RAR-Teilen), aus denen alles einsortiert ist. Die dürfen in den Papierkorb.</summary>
+        /// <summary>Archives (including further RAR parts) whose content is fully sorted. These may go to the recycle bin.</summary>
         public readonly List<string> DoneArchives = new List<string>();
         public int Placed => Games + Updates + Dlcs;
     }
 
     /// <summary>
-    /// "Spiel hinzufügen": entpackt ZIP, RAR und 7z und legt NSP, NSZ, XCI und XCZ an die richtige Stelle,
-    /// Basisspiele nach Games, Updates und DLCs nach "Updates und DLCs".
-    /// Erkannt wird in dieser Reihenfolge: cnmt.xml im Paket, Tickets im Paket (heißen nach der Title-ID),
-    /// Title-ID im Dateinamen, Wörter wie "Update" oder "DLC" im Namen. Hilft nichts davon, wird gefragt.
+    /// "Add game": unpacks ZIP, RAR and 7z and puts NSP, NSZ, XCI and XCZ in the right place, base games into Games,
+    /// updates and DLCs into the updates and DLCs folder.
+    /// Recognized in this order: cnmt.xml in the package, tickets in the package (named after the title ID),
+    /// title ID in the file name, words like "Update" or "DLC" in the name. If none of that helps, the user is asked.
     /// </summary>
     public sealed class GameImporter
     {
-        public const string DialogFilter =
-            "Spiele und Archive (*.zip;*.rar;*.7z;*.nsp;*.nsz;*.xci;*.xcz)|*.zip;*.rar;*.7z;*.nsp;*.nsz;*.xci;*.xcz|Alle Dateien (*.*)|*.*";
+        public static string DialogFilter =>
+            L.T("Spiele und Archive", "Games and archives") + " (*.zip;*.rar;*.7z;*.nsp;*.nsz;*.xci;*.xcz)|*.zip;*.rar;*.7z;*.nsp;*.nsz;*.xci;*.xcz|"
+            + L.T("Alle Dateien", "All files") + " (*.*)|*.*";
 
         static readonly string[] GameExtensions = { ".nsp", ".nsz", ".xci", ".xcz" };
 
-        // Title-IDs: beim Basisspiel sind die unteren 13 Bit leer, das Update ist Basis | 0x800,
-        // ein DLC ist Basis + 0x1000 + Nummer. Tickets heißen <Title-ID><16 weitere Stellen>.tik.
+        // Title IDs: a base game has the lower 13 bits clear, its update is base | 0x800,
+        // a DLC is base + 0x1000 + number. Tickets are named <title ID><16 more digits>.tik.
         static readonly Regex TitleIdInName = new Regex(@"(?<![0-9A-Fa-f])01[0-9A-Fa-f]{14}(?![0-9A-Fa-f])");
         static readonly Regex TicketName = new Regex(@"^(01[0-9A-Fa-f]{14})[0-9A-Fa-f]{16}\.tik$", RegexOptions.IgnoreCase);
         static readonly Regex UpdateWord = new Regex(@"(^|[^a-z])(update|upd)([^a-z]|$)", RegexOptions.IgnoreCase);
@@ -62,7 +63,7 @@ namespace EdenInstaller
         readonly Stopwatch uiThrottle = Stopwatch.StartNew();
         int stagingCounter;
 
-        /// <param name="stagingDir">Hier wird ausgepackt. Liegt neben den Zielordnern, dann geht das Verschieben sofort.</param>
+        /// <param name="stagingDir">Unpacking happens here. It sits next to the target folders, so moving is instant.</param>
         public GameImporter(string gamesDir, string dlcDir, string stagingDir, IImportUi ui)
         {
             this.gamesDir = gamesDir;
@@ -75,7 +76,7 @@ namespace EdenInstaller
         {
             Directory.CreateDirectory(gamesDir);
             Directory.CreateDirectory(dlcDir);
-            TryDeleteDirectory(stagingDir);   // Reste von einem abgebrochenen Lauf
+            TryDeleteDirectory(stagingDir);   // leftovers from a cancelled run
 
             var all = files.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             var selected = new HashSet<string>(all, StringComparer.OrdinalIgnoreCase);
@@ -87,8 +88,10 @@ namespace EdenInstaller
                     string first = FirstRarPart(file);
                     if (first != null && !SamePath(first, file))
                     {
-                        // Teil 2, 3 und so weiter werden zusammen mit Teil 1 entpackt
-                        if (!selected.Contains(first)) Skip(file, "Teil eines mehrteiligen Archivs, bitte Teil 1 auswählen");
+                        // Parts 2, 3 and so on are unpacked together with part 1
+                        if (!selected.Contains(first))
+                            Skip(file, L.T("Teil eines mehrteiligen Archivs, bitte Teil 1 auswählen",
+                                "Part of a multi-part archive, please select part 1"));
                         continue;
                     }
                     ImportOne(file, ct);
@@ -98,21 +101,21 @@ namespace EdenInstaller
             {
                 TryDeleteDirectory(stagingDir);
             }
-            ui.Progress("Fertig", 1, "");
+            ui.Progress(L.T("Fertig", "Done"), 1, "");
             return result;
         }
 
-        // ---------------------------------------------------------------- pro ausgewählter Datei
+        // ---------------------------------------------------------------- per selected file
 
         void ImportOne(string file, CancellationToken ct)
         {
             string name = Path.GetFileName(file);
             string ext = Path.GetExtension(file).ToLowerInvariant();
-            Log.Write("Spiel hinzufügen: " + file);
+            Log.Write("Add game: " + file);
 
             if (!IsGame(name) && ext != ".zip" && ext != ".rar" && ext != ".7z")
             {
-                Skip(file, "Weder Spiel noch Archiv");
+                Skip(file, L.T("Weder Spiel noch Archiv", "Neither a game nor an archive"));
                 return;
             }
 
@@ -126,14 +129,14 @@ namespace EdenInstaller
             }
             catch (OperationCanceledException)
             {
-                item.Set(ImportTone.Skip, "Abgebrochen", Describe(t));
+                item.Set(ImportTone.Skip, L.T("Abgebrochen", "Cancelled"), Describe(t));
                 Count(t);
                 throw;
             }
             catch (Exception ex)
             {
-                Log.Write("  Fehler: " + ex);
-                item.Set(ImportTone.Error, "Fehler", EdenSetup.Describe(ex));
+                Log.Write("  Error: " + ex);
+                item.Set(ImportTone.Error, L.T("Fehler", "Error"), EdenSetup.Describe(ex));
                 Count(t);
                 result.Failed++;
                 return;
@@ -142,7 +145,8 @@ namespace EdenInstaller
             Count(t);
             if (t.Found == 0)
             {
-                item.Set(ImportTone.Skip, "Leer", "Keine Spieldatei (NSP, NSZ, XCI oder XCZ) drin");
+                item.Set(ImportTone.Skip, L.T("Leer", "Empty"),
+                    L.T("Keine Spieldatei (NSP, NSZ, XCI oder XCZ) drin", "No game file (NSP, NSZ, XCI or XCZ) inside"));
                 result.Skipped++;
                 return;
             }
@@ -158,8 +162,8 @@ namespace EdenInstaller
 
         void Skip(string file, string reason)
         {
-            Log.Write($"  übersprungen: {file} ({reason})");
-            ui.AddItem(Path.GetFileName(file)).Set(ImportTone.Skip, "Übersprungen", reason);
+            Log.Write($"  skipped: {file} ({reason})");
+            ui.AddItem(Path.GetFileName(file)).Set(ImportTone.Skip, L.T("Übersprungen", "Skipped"), reason);
             result.Skipped++;
         }
 
@@ -174,7 +178,7 @@ namespace EdenInstaller
 
         void ImportZip(string archive, Tally t, ImportItem item, CancellationToken ct)
         {
-            string label = "Entpacke " + Path.GetFileName(archive);
+            string label = L.T("Entpacke ", "Unpacking ") + Path.GetFileName(archive);
             try
             {
                 using (var zip = ZipFile.OpenRead(archive))
@@ -187,7 +191,7 @@ namespace EdenInstaller
                         EnsureSpace(stagingDir, entry.Length);
                         string fileName = CleanName(entry.Name);
                         string staged = Path.Combine(NewStagingFolder(), fileName);
-                        item.Detail = "Wird entpackt";
+                        item.Detail = L.T("Wird entpackt", "Unpacking");
                         try { CopyToFile(entry.Open(), staged, ref done, total, label, ct); }
                         catch { EdenSetup.DeleteFile(staged); throw; }
                         PlaceGame(staged, fileName, true, t, item, ct);
@@ -196,25 +200,29 @@ namespace EdenInstaller
             }
             catch (InvalidDataException ex)
             {
-                // Zum Beispiel Deflate64: kann .NET nicht, 7-Zip und tar aber schon
-                Log.Write("  Zip nicht lesbar: " + ex.Message);
+                // Deflate64 for example: .NET can't, 7-Zip and tar can
+                Log.Write("  Zip not readable: " + ex.Message);
                 if (t.Found > 0 || FindTool() == null)
-                    throw new InstallException("Das ZIP ließ sich nicht entpacken. Vielleicht ist es unvollständig, beschädigt oder hat ein Passwort.");
+                    throw new InstallException(L.T(
+                        "Das ZIP ließ sich nicht entpacken. Vielleicht ist es unvollständig, beschädigt oder hat ein Passwort.",
+                        "The ZIP could not be unpacked. It may be incomplete, damaged or password protected."));
                 ImportWithTool(archive, t, item, ct);
             }
         }
 
-        /// <summary>RAR und 7z (und ZIPs, die .NET nicht lesen kann) über 7-Zip oder das tar von Windows.</summary>
+        /// <summary>RAR and 7z (and ZIPs .NET can't read) through 7-Zip or the tar that ships with Windows.</summary>
         void ImportWithTool(string archive, Tally t, ImportItem item, CancellationToken ct)
         {
             var tool = FindTool();
             if (tool == null)
-                throw new InstallException("Zum Entpacken von RAR und 7z wird 7-Zip gebraucht (7-zip.org). Oder entpacke das Archiv selbst und wähle dann die NSP- oder XCI-Datei aus.");
+                throw new InstallException(L.T(
+                    "Zum Entpacken von RAR und 7z wird 7-Zip gebraucht (7-zip.org). Oder entpacke das Archiv selbst und wähle dann die NSP- oder XCI-Datei aus.",
+                    "Unpacking RAR and 7z needs 7-Zip (7-zip.org). Or unpack the archive yourself and then select the NSP or XCI file."));
 
             string outDir = NewStagingFolder();
             long expected = new FileInfo(archive).Length + OtherParts(archive).Sum(f => new FileInfo(f).Length);
             EnsureSpace(outDir, expected + expected / 20);
-            item.Detail = "Wird entpackt";
+            item.Detail = L.T("Wird entpackt", "Unpacking");
 
             var (exe, sevenZip) = tool.Value;
             string args = sevenZip
@@ -247,11 +255,11 @@ namespace EdenInstaller
                 proc.OutputDataReceived += keep;
                 proc.ErrorDataReceived += keep;
                 proc.Start();
-                proc.StandardInput.Close();   // will das Archiv ein Passwort, scheitert es sofort statt zu warten
+                proc.StandardInput.Close();   // if the archive wants a password, it fails right away instead of waiting
                 proc.BeginOutputReadLine();
                 proc.BeginErrorReadLine();
 
-                string label = "Entpacke " + Path.GetFileName(archive);
+                string label = L.T("Entpacke ", "Unpacking ") + Path.GetFileName(archive);
                 try
                 {
                     while (!proc.WaitForExit(400))
@@ -259,9 +267,9 @@ namespace EdenInstaller
                         ct.ThrowIfCancellationRequested();
                         long done = DirectorySize(outDir);
                         ui.Progress(label, expected > 0 ? Math.Min(0.99, (double)done / expected) : (double?)null,
-                            $"{EdenSetup.Size(done)} von etwa {EdenSetup.Size(expected)}");
+                            EdenSetup.Size(done) + L.T(" von etwa ", " of about ") + EdenSetup.Size(expected));
                     }
-                    proc.WaitForExit();   // restliche Ausgabe abholen
+                    proc.WaitForExit();   // collect the remaining output
                 }
                 catch (OperationCanceledException)
                 {
@@ -271,10 +279,12 @@ namespace EdenInstaller
 
                 string output;
                 lock (tail) output = string.Join(" | ", tail);
-                Log.Write($"  beendet mit {proc.ExitCode}: {output}");
-                // 7-Zip meldet 1 bei Warnungen, die Dateien sind dann trotzdem da
+                Log.Write($"  exit code {proc.ExitCode}: {output}");
+                // 7-Zip returns 1 for warnings, the files are there anyway
                 if (proc.ExitCode > (sevenZip ? 1 : 0))
-                    throw new InstallException("Das Archiv ließ sich nicht entpacken. Vielleicht ist es unvollständig, beschädigt oder hat ein Passwort.");
+                    throw new InstallException(L.T(
+                        "Das Archiv ließ sich nicht entpacken. Vielleicht ist es unvollständig, beschädigt oder hat ein Passwort.",
+                        "The archive could not be unpacked. It may be incomplete, damaged or password protected."));
             }
 
             foreach (string path in Directory.GetFiles(outDir, "*", SearchOption.AllDirectories).Where(f => IsGame(f)).OrderBy(f => f))
@@ -285,7 +295,7 @@ namespace EdenInstaller
             TryDeleteDirectory(outDir);
         }
 
-        // ---------------------------------------------------------------- einsortieren
+        // ---------------------------------------------------------------- sorting
 
         void PlaceGame(string path, string fileName, bool staged, Tally t, ImportItem item, CancellationToken ct)
         {
@@ -294,7 +304,7 @@ namespace EdenInstaller
             if (kind == null)
             {
                 kind = ui.Ask(fileName);
-                Log.Write("  Antwort: " + KindName(kind));
+                Log.Write("  answer: " + KindName(kind));
                 if (kind == null)
                 {
                     t.Skipped++;
@@ -313,20 +323,20 @@ namespace EdenInstaller
             {
                 if (new FileInfo(target).Length == new FileInfo(path).Length)
                 {
-                    Log.Write("  liegt schon da: " + target);
+                    Log.Write("  already there: " + target);
                     t.Already++;
                     if (staged) EdenSetup.DeleteFile(path);
                     return;
                 }
-                Log.Write("  ersetzt die ältere Datei mit gleichem Namen");
+                Log.Write("  replaces the older file with the same name");
                 EdenSetup.DeleteFile(target);
             }
             Move(path, target, item, ct);
-            Log.Write("  nach " + target);
+            Log.Write("  to " + target);
             t.Add(kind.Value);
         }
 
-        /// <summary>Auf demselben Laufwerk sofort, sonst kopieren mit Fortschritt und danach das Original löschen.</summary>
+        /// <summary>Instant on the same drive, otherwise copy with progress and delete the original afterwards.</summary>
         void Move(string source, string target, ImportItem item, CancellationToken ct)
         {
             if (SameDrive(source, target))
@@ -336,12 +346,12 @@ namespace EdenInstaller
             }
             long length = new FileInfo(source).Length, done = 0;
             EnsureSpace(target, length);
-            string part = target + ".teil";
-            item.Detail = "Wird kopiert";
+            string part = target + ".part";
+            item.Detail = L.T("Wird kopiert", "Copying");
             try
             {
                 CopyToFile(new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 17), part,
-                    ref done, length, "Kopiere " + Path.GetFileName(target), ct);
+                    ref done, length, L.T("Kopiere ", "Copying ") + Path.GetFileName(target), ct);
                 File.Move(part, target);
             }
             catch
@@ -352,14 +362,14 @@ namespace EdenInstaller
             EdenSetup.DeleteFile(source);
         }
 
-        // ---------------------------------------------------------------- erkennen
+        // ---------------------------------------------------------------- recognizing
 
         public static GameKind? Classify(string path, string fileName, out string how)
         {
             string ext = Path.GetExtension(fileName).ToLowerInvariant();
             if (ext == ".xci" || ext == ".xcz")
             {
-                how = "Kartenabbild";
+                how = "cartridge image";
                 return GameKind.Base;
             }
 
@@ -373,21 +383,21 @@ namespace EdenInstaller
                 .Select(m => KindOf(ulong.Parse(m.Value, NumberStyles.HexNumber))));
             if (byId != null)
             {
-                how = "Title-ID im Namen";
+                how = "title ID in name";
                 return byId;
             }
 
             if (DlcWord.IsMatch(fileName))
             {
-                how = "DLC im Namen";
+                how = "DLC in name";
                 return GameKind.Dlc;
             }
             if (UpdateWord.IsMatch(fileName))
             {
-                how = "Update im Namen";
+                how = "update in name";
                 return GameKind.Update;
             }
-            how = "nicht erkannt";
+            how = "not recognized";
             return null;
         }
 
@@ -400,7 +410,7 @@ namespace EdenInstaller
             return null;
         }
 
-        /// <summary>Sammelpakete zählen nach dem wichtigsten Teil: mit Spiel als Spiel, sonst mit Update als Update.</summary>
+        /// <summary>Bundles count by their most important part: with a game as game, otherwise with an update as update.</summary>
         static GameKind? Strongest(IEnumerable<GameKind?> kinds)
         {
             var list = kinds.Where(k => k != null).Select(k => k.Value).ToList();
@@ -409,7 +419,7 @@ namespace EdenInstaller
             return list.Contains(GameKind.Update) ? GameKind.Update : GameKind.Dlc;
         }
 
-        /// <summary>Schaut ins Inhaltsverzeichnis eines NSP oder NSZ, das ist unverschlüsselt.</summary>
+        /// <summary>Looks into the file table of an NSP or NSZ, which is not encrypted.</summary>
         static GameKind? FromPackage(string path, out string how)
         {
             how = null;
@@ -424,7 +434,7 @@ namespace EdenInstaller
                         .Select(e => FromCnmtXml(fs, dataStart + e.Offset, e.Size)).ToList());
                     if (fromXml != null)
                     {
-                        how = "cnmt.xml im Paket";
+                        how = "cnmt.xml in package";
                         return fromXml;
                     }
 
@@ -433,14 +443,14 @@ namespace EdenInstaller
                         .Select(m => KindOf(ulong.Parse(m.Groups[1].Value, NumberStyles.HexNumber))).ToList());
                     if (fromTickets != null)
                     {
-                        how = "Ticket im Paket";
+                        how = "ticket in package";
                         return fromTickets;
                     }
                 }
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
-                Log.Write("  Paket nicht lesbar: " + ex.Message);
+                Log.Write("  Package not readable: " + ex.Message);
             }
             return null;
         }
@@ -451,7 +461,7 @@ namespace EdenInstaller
             public long Offset, Size;
         }
 
-        /// <summary>Inhaltsverzeichnis eines PFS0 (NSP und NSZ). Leer, wenn die Datei keins ist.</summary>
+        /// <summary>File table of a PFS0 (NSP and NSZ). Empty if the file is not one.</summary>
         static List<PackageEntry> ReadPfs0(FileStream fs, out long dataStart)
         {
             var list = new List<PackageEntry>();
@@ -487,7 +497,7 @@ namespace EdenInstaller
             return list;
         }
 
-        /// <summary>Manche NSPs haben die Metadaten zusätzlich als lesbare XML dabei, dort steht der Typ direkt.</summary>
+        /// <summary>Some NSPs also carry the metadata as readable XML, it names the type directly.</summary>
         static GameKind? FromCnmtXml(FileStream fs, long offset, long size)
         {
             if (size <= 0 || size > (1 << 20) || offset + size > fs.Length) return null;
@@ -507,7 +517,7 @@ namespace EdenInstaller
             return id.Success ? KindOf(ulong.Parse(id.Groups[1].Value, NumberStyles.HexNumber)) : null;
         }
 
-        // ---------------------------------------------------------------- Hilfen
+        // ---------------------------------------------------------------- helpers
 
         public static bool IsGame(string fileName) =>
             GameExtensions.Contains(Path.GetExtension(fileName).ToLowerInvariant());
@@ -522,32 +532,39 @@ namespace EdenInstaller
         }
 
         static string KindName(GameKind? kind) =>
-            kind == GameKind.Base ? "Spiel" : kind == GameKind.Update ? "Update" : kind == GameKind.Dlc ? "DLC" : "unbekannt";
+            kind == GameKind.Base ? "game" : kind == GameKind.Update ? "update" : kind == GameKind.Dlc ? "DLC" : "unknown";
 
         static (ImportTone, string) Badge(Tally t)
         {
             int kinds = (t.Games > 0 ? 1 : 0) + (t.Updates > 0 ? 1 : 0) + (t.Dlcs > 0 ? 1 : 0);
-            if (kinds == 0) return t.Already > 0 ? (ImportTone.Skip, "Schon da") : (ImportTone.Skip, "Übersprungen");
-            if (kinds > 1) return (ImportTone.Mixed, "Mehrere");
-            if (t.Games > 0) return (ImportTone.Game, "Spiel");
+            if (kinds == 0)
+                return t.Already > 0 ? (ImportTone.Skip, L.T("Schon da", "Already there")) : (ImportTone.Skip, L.T("Übersprungen", "Skipped"));
+            if (kinds > 1) return (ImportTone.Mixed, L.T("Mehrere", "Several"));
+            if (t.Games > 0) return (ImportTone.Game, L.T("Spiel", "Game"));
             return t.Updates > 0 ? (ImportTone.Update, "Update") : (ImportTone.Dlc, "DLC");
         }
 
-        static string Describe(Tally t)
+        string Describe(Tally t)
         {
             var parts = new List<string>();
-            if (t.Games > 0) parts.Add((t.Games == 1 ? "Spiel" : t.Games + " Spiele") + " in „Games“");
+            if (t.Games > 0)
+                parts.Add(L.T(t.Games == 1 ? "Spiel" : t.Games + " Spiele", t.Games == 1 ? "game" : t.Games + " games")
+                    + L.T(" in ", " in ") + L.Q(Path.GetFileName(gamesDir)));
             var extra = new List<string>();
-            if (t.Updates > 0) extra.Add(t.Updates == 1 ? "Update" : t.Updates + " Updates");
+            if (t.Updates > 0) extra.Add(t.Updates == 1 ? L.T("Update", "update") : t.Updates + L.T(" Updates", " updates"));
             if (t.Dlcs > 0) extra.Add(t.Dlcs == 1 ? "DLC" : t.Dlcs + " DLCs");
-            if (extra.Count > 0) parts.Add(string.Join(" und ", extra) + " in „Updates und DLCs“");
-            if (t.Already > 0) parts.Add(t.Already == 1 ? "lag schon im richtigen Ordner" : t.Already + " lagen schon im richtigen Ordner");
-            if (t.Skipped > 0) parts.Add(t.Skipped == 1 ? "eine Datei übersprungen" : t.Skipped + " Dateien übersprungen");
+            if (extra.Count > 0) parts.Add(L.Join(extra) + " in " + L.Q(Path.GetFileName(dlcDir)));
+            if (t.Already > 0)
+                parts.Add(L.T(t.Already == 1 ? "lag schon im richtigen Ordner" : t.Already + " lagen schon im richtigen Ordner",
+                    t.Already == 1 ? "was already in the right folder" : t.Already + " were already in the right folder"));
+            if (t.Skipped > 0)
+                parts.Add(L.T(t.Skipped == 1 ? "eine Datei übersprungen" : t.Skipped + " Dateien übersprungen",
+                    t.Skipped == 1 ? "one file skipped" : t.Skipped + " files skipped"));
             string s = string.Join(", ", parts);
-            return s.Length == 0 ? "" : char.ToUpper(s[0], CultureInfo.GetCultureInfo("de-DE")) + s.Substring(1);
+            return s.Length == 0 ? "" : char.ToUpper(s[0], L.Culture) + s.Substring(1);
         }
 
-        /// <summary>Bei "x.part2.rar" der Pfad von Teil 1, bei "x.part1.rar" die Datei selbst, sonst null.</summary>
+        /// <summary>For "x.part2.rar" the path of part 1, for "x.part1.rar" the file itself, otherwise null.</summary>
         static string FirstRarPart(string file)
         {
             var m = RarPart.Match(Path.GetFileName(file));
@@ -568,7 +585,7 @@ namespace EdenInstaller
             return Path.Combine(Path.GetDirectoryName(file), prefix + ".part1.rar");
         }
 
-        /// <summary>Weitere Teile eines mehrteiligen RAR, die beim Entpacken mitgelesen werden.</summary>
+        /// <summary>Further parts of a multi-part RAR that are read along when unpacking.</summary>
         static List<string> OtherParts(string archive)
         {
             var list = new List<string>();
@@ -589,7 +606,7 @@ namespace EdenInstaller
             return list;
         }
 
-        /// <summary>7-Zip, wenn installiert, sonst das tar von Windows 10 und 11 (kann RAR und 7z ebenfalls).</summary>
+        /// <summary>7-Zip if installed, otherwise the tar of Windows 10 and 11 (it handles RAR and 7z as well).</summary>
         static (string exe, bool sevenZip)? FindTool()
         {
             foreach (string root in new[]
@@ -631,11 +648,10 @@ namespace EdenInstaller
                     dst.Write(buffer, 0, n);
                     done += n;
                     if (Throttled())
-                        ui.Progress(label, total > 0 ? (double)done / total : (double?)null,
-                            $"{EdenSetup.Size(done)} von {EdenSetup.Size(total)}");
+                        ui.Progress(label, total > 0 ? (double)done / total : (double?)null, EdenSetup.Of(done, total));
                 }
             }
-            ui.Progress(label, total > 0 ? (double)done / total : (double?)null, $"{EdenSetup.Size(done)} von {EdenSetup.Size(total)}");
+            ui.Progress(label, total > 0 ? (double)done / total : (double?)null, EdenSetup.Of(done, total));
         }
 
         bool Throttled()
@@ -652,8 +668,7 @@ namespace EdenInstaller
             try { free = new DriveInfo(root).AvailableFreeSpace; }
             catch { return; }
             long need = bytes + 200L * 1024 * 1024;
-            if (free < need)
-                throw new InstallException($"Auf Laufwerk {root.TrimEnd('\\')} ist zu wenig Platz. Gebraucht werden etwa {EdenSetup.Size(need)}, frei sind {EdenSetup.Size(free)}.");
+            if (free < need) throw new InstallException(EdenSetup.NotEnoughSpace(root, need, free));
         }
 
         static long DirectorySize(string dir)
@@ -665,7 +680,7 @@ namespace EdenInstaller
                 {
                     try
                     {
-                        // Über einen eigenen Handle, die Größe im Verzeichnis hinkt bei Dateien im Schreiben hinterher
+                        // Through an own handle, the size in the directory lags behind for files being written
                         using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                             sum += fs.Length;
                     }
@@ -695,7 +710,7 @@ namespace EdenInstaller
         static void TryDeleteDirectory(string dir)
         {
             try { EdenSetup.DeleteDirectory(dir); }
-            catch (Exception ex) { Log.Write("  Ordner bleibt liegen: " + dir + " (" + ex.Message + ")"); }
+            catch (Exception ex) { Log.Write("  Folder stays: " + dir + " (" + ex.Message + ")"); }
         }
 
         sealed class Tally
@@ -712,12 +727,12 @@ namespace EdenInstaller
         }
     }
 
-    /// <summary>Eine Zeile in der Liste unter "Spiel hinzufügen".</summary>
+    /// <summary>One row in the list below "Add game".</summary>
     public sealed class ImportItem : INotifyPropertyChanged
     {
         ImportTone tone = ImportTone.Busy;
         string badge = "…";
-        string detail = "Wird geprüft";
+        string detail = L.T("Wird geprüft", "Checking");
 
         public ImportItem(string name) => Name = name;
 

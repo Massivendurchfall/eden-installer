@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- .NET Framework 4.8 steckt in jedem Windows 10/11, die exe läuft also ohne Zusatzinstallation. -->
+  <!-- .NET Framework 4.8 ships with every Windows 10/11, so the exe runs without installing anything. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
@@ -12,7 +12,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>eden-installer.ico</ApplicationIcon>
     <Product>Eden Installer</Product>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <DebugType>none</DebugType>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>

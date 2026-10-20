@@ -19,18 +19,20 @@ namespace EdenInstaller
     {
         enum Phase { Ready, Running, Done, Failed }
 
-        const string AddGameHintText = "ZIP, RAR, 7z, NSP oder XCI auswählen. Spiele, Updates und DLCs landen von selbst im richtigen Ordner.";
+        static string AddGameHintText => L.T(
+            "ZIP, RAR, 7z, NSP oder XCI auswählen. Spiele, Updates und DLCs landen von selbst im richtigen Ordner.",
+            "Pick ZIP, RAR, 7z, NSP or XCI files. Games, updates and DLCs land in the right folder on their own.");
 
         readonly AppOptions opts;
         readonly ObservableCollection<StepItem> steps = new ObservableCollection<StepItem>();
         readonly ObservableCollection<ImportItem> imports = new ObservableCollection<ImportItem>();
         readonly string stateFile;
         string installDir;
-        /// <summary>Wo Eden schon fertig eingerichtet ist, sonst null. Dann gibt es die Startansicht.</summary>
+        /// <summary>Where Eden is already fully set up, otherwise null. Then there is the home screen.</summary>
         string installedDir;
-        /// <summary>Was die Merkdatei als installiert kennt, sonst null.</summary>
+        /// <summary>What the state file knows as installed, otherwise null.</summary>
         ReleaseSet installedVersions;
-        /// <summary>Suche nach den neuesten Versionen, läuft ab dem Start im Hintergrund.</summary>
+        /// <summary>Search for the latest versions, runs in the background from the start.</summary>
         Task<ReleaseSet> releases;
         bool onHome;
         Phase phase;
@@ -45,13 +47,14 @@ namespace EdenInstaller
             this.opts = opts;
             InitializeComponent();
 
-            for (int i = 0; i < EdenSetup.StepTitles.Length; i++)
-                steps.Add(new StepItem(i + 1, EdenSetup.StepTitles[i]));
+            string[] titles = EdenSetup.StepTitles;
+            for (int i = 0; i < titles.Length; i++)
+                steps.Add(new StepItem(i + 1, titles[i]));
             StepsList.ItemsSource = steps;
             ResultsList.ItemsSource = imports;
             AddGameHint.Text = AddGameHintText;
 
-            // Eden selbst kommt zu den Programmen des Benutzers (ohne Adminrechte), auf den Desktop nur die Verknüpfung.
+            // Eden itself goes to the user's programs (no admin rights needed), only the shortcut goes on the desktop.
             string localAppData = opts.IsSandbox
                 ? Path.Combine(opts.SandboxDir, "LocalAppData")
                 : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -77,8 +80,8 @@ namespace EdenInstaller
         }
 
         /// <summary>
-        /// Erst die Merkdatei, sonst der Standardort (Installationen von vor der Merkdatei haben keine).
-        /// Fehlt eden.exe, gilt Eden als nicht installiert.
+        /// First the state file, otherwise the default location (installs from before the state file have none).
+        /// Without eden.exe, Eden counts as not installed.
         /// </summary>
         string FindInstallation()
         {
@@ -88,14 +91,14 @@ namespace EdenInstaller
             var standard = BuildPaths();
             if (File.Exists(standard.EdenExe) && Directory.Exists(standard.GamesDir) && Directory.Exists(standard.DlcDir))
             {
-                Log.Write("Installation ohne Merkdatei gefunden: " + standard.InstallDir);
+                Log.Write("Install without state file found: " + standard.InstallDir);
                 InstallState.Save(stateFile, standard, null);
                 return standard.InstallDir;
             }
             return null;
         }
 
-        // ---------------------------------------------------------------- Ansichten
+        // ---------------------------------------------------------------- Views
 
         void ShowHome(string message, string brushKey)
         {
@@ -138,11 +141,12 @@ namespace EdenInstaller
             var paths = BuildPaths();
             int games = GameImporter.CountGames(paths.GamesDir), extras = GameImporter.CountGames(paths.DlcDir);
             CountText.Text = games == 0 && extras == 0
-                ? "Noch keine Spiele einsortiert."
-                : $"Einsortiert: {games} {(games == 1 ? "Spiel" : "Spiele")}, dazu {extras} {(extras == 1 ? "Update oder DLC" : "Updates und DLCs")}.";
+                ? L.T("Noch keine Spiele einsortiert.", "No games sorted in yet.")
+                : L.T($"Einsortiert: {games} {(games == 1 ? "Spiel" : "Spiele")}, dazu {extras} {(extras == 1 ? "Update oder DLC" : "Updates und DLCs")}.",
+                    $"Sorted in: {games} {(games == 1 ? "game" : "games")}, plus {extras} {(extras == 1 ? "update or DLC" : "updates and DLCs")}.");
         }
 
-        // ---------------------------------------------------------------- Versionen
+        // ---------------------------------------------------------------- Versions
 
         ReleaseSet Found => releases.Status == TaskStatus.RanToCompletion ? releases.Result : null;
 
@@ -151,13 +155,13 @@ namespace EdenInstaller
             var task = releases;
             try { await task; }
             catch (OperationCanceledException) { return; }
-            if (task != releases) return;   // inzwischen läuft eine neue Suche
+            if (task != releases) return;   // a new search is running by now
             UpdateChips();
             UpdateNews();
             if (!onHome && phase == Phase.Ready) ProgressLabel.Text = ReadyLabel();
         }
 
-        /// <summary>Startansicht: was installiert ist. Installation: was gleich geladen wird.</summary>
+        /// <summary>Home screen: what is installed. Installation: what is about to be downloaded.</summary>
         void UpdateChips()
         {
             ReleaseSet shown = onHome ? installedVersions : Found;
@@ -167,14 +171,15 @@ namespace EdenInstaller
             ChipKeys.Text = Chip("Keys ", "Keys", shown?.KeysVersion, searching);
             string waiting = !onHome ? Found?.NewerFirmwareWithoutKeys : null;
             ChipFirmware.ToolTip = waiting != null
-                ? $"Firmware {waiting} gibt es schon, passende Keys aber noch nicht. Firmware und Keys müssen gleich sein."
+                ? L.T($"Firmware {waiting} gibt es schon, passende Keys aber noch nicht. Firmware und Keys müssen gleich sein.",
+                    $"Firmware {waiting} is already out, but matching keys are not yet. Firmware and keys have to match.")
                 : null;
         }
 
         static string Chip(string prefix, string name, string version, bool searching) =>
             version != null ? prefix + version : searching ? name + " …" : name;
 
-        /// <summary>In der Startansicht ein Hinweis, wenn es neuere Versionen gibt. Firmware zählt nur mit passenden Keys.</summary>
+        /// <summary>On the home screen a note when newer versions exist. Firmware only counts with matching keys.</summary>
         void UpdateNews()
         {
             ReleaseSet latest = Found;
@@ -185,10 +190,11 @@ namespace EdenInstaller
                     news.Add("Eden v" + latest.EdenVersion);
                 if (ReleaseFinder.IsNewer(latest.FirmwareVersion, installedVersions.FirmwareVersion)
                     || ReleaseFinder.IsNewer(latest.KeysVersion, installedVersions.KeysVersion))
-                    news.Add("Firmware und Keys " + latest.FirmwareVersion);
+                    news.Add(L.T("Firmware und Keys ", "firmware and keys ") + latest.FirmwareVersion);
             }
             NewsText.Text = news.Count == 0 ? ""
-                : $"Neu verfügbar: {string.Join(" sowie ", news)}. Über „Neu installieren“ holst du es, deine Spiele bleiben drin.";
+                : L.T($"Neu verfügbar: {string.Join(" sowie ", news)}. Über „Neu installieren“ holst du es, deine Spiele bleiben drin.",
+                    $"New: {string.Join(" and ", news)}. Use “Reinstall” to get it, your games stay.");
             NewsText.Visibility = news.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         }
 
@@ -196,8 +202,9 @@ namespace EdenInstaller
         {
             ReleaseSet found = Found;
             return found?.NewerFirmwareWithoutKeys != null
-                ? $"Bereit. Für Firmware {found.NewerFirmwareWithoutKeys} gibt es noch keine Keys, also {found.FirmwareVersion}."
-                : "Bereit";
+                ? L.T($"Bereit. Für Firmware {found.NewerFirmwareWithoutKeys} gibt es noch keine Keys, also {found.FirmwareVersion}.",
+                    $"Ready. Firmware {found.NewerFirmwareWithoutKeys} has no keys yet, so {found.FirmwareVersion}.")
+                : L.T("Bereit", "Ready");
         }
 
         // ---------------------------------------------------------------- Installation
@@ -216,13 +223,13 @@ namespace EdenInstaller
             EdenSetup setup = null;
             try
             {
-                // Ging die Suche beim Start nicht (etwa ohne Internet), jetzt noch einmal
+                // If the search at startup failed (no internet for example), try once more now
                 if (releases.IsCompleted && (Found == null || Found.UsedBuiltIn))
                 {
                     releases = ReleaseFinder.FindAsync(cts.Token);
                     ShowReleasesWhenFound();
                 }
-                if (!releases.IsCompleted) SetProgress(-1, "Suche die neuesten Versionen", null, "");
+                if (!releases.IsCompleted) SetProgress(-1, L.T("Suche die neuesten Versionen", "Looking for the latest versions"), null, "");
                 await Task.WhenAny(releases, Task.Delay(Timeout.Infinite, cts.Token));
                 cts.Token.ThrowIfCancellationRequested();
                 ReleaseSet found = releases.Result;
@@ -230,28 +237,29 @@ namespace EdenInstaller
 
                 setup = new EdenSetup(paths, found, this);
                 await setup.RunAsync(cts.Token);
-                InstallState.Save(stateFile, paths, found);   // ab jetzt startet der Installer gleich mit den Knöpfen
+                InstallState.Save(stateFile, paths, found);   // from now on the installer starts right on the home screen
                 installedVersions = found;
                 installedDir = installDir;
                 SetPhase(Phase.Done);
-                ShowHome("Installation abgeschlossen. Mit „Spiel hinzufügen“ kommen Spiele, Updates und DLCs gleich in den richtigen Ordner.",
+                ShowHome(L.T("Installation abgeschlossen. Mit „Spiel hinzufügen“ kommen Spiele, Updates und DLCs gleich in den richtigen Ordner.",
+                        "Installation finished. Use “Add game” to put games, updates and DLCs straight into the right folder."),
                     "SuccessBrush");
-                if (opts.IsSandbox) FinishSandbox("3-fertig.png", 0);
+                if (opts.IsSandbox) FinishSandbox("3-done.png", 0);
             }
             catch (Exception ex) when (ex is OperationCanceledException || cts.IsCancellationRequested)
             {
-                Log.Write("Abgebrochen");
-                setup?.FailCurrentStep("Abgebrochen");
-                SetPhase(Phase.Failed, "Installation abgebrochen.");
+                Log.Write("Cancelled");
+                setup?.FailCurrentStep(L.T("Abgebrochen", "Cancelled"));
+                SetPhase(Phase.Failed, L.T("Installation abgebrochen.", "Installation cancelled."));
                 if (closeAfterCancel) Close();
             }
             catch (Exception ex)
             {
-                Log.Write("Fehler: " + ex);
+                Log.Write("Error: " + ex);
                 string message = EdenSetup.Describe(ex);
                 setup?.FailCurrentStep(message);
-                SetPhase(Phase.Failed, "Das hat nicht geklappt. Details stehen beim roten Schritt.");
-                if (opts.IsSandbox) FinishSandbox("3-fehler.png", 1);
+                SetPhase(Phase.Failed, L.T("Das hat nicht geklappt. Details stehen beim roten Schritt.", "That didn't work. Details are at the red step."));
+                if (opts.IsSandbox) FinishSandbox("3-error.png", 1);
             }
             finally
             {
@@ -285,30 +293,32 @@ namespace EdenInstaller
             phase = next;
             ChangeFolderButton.IsEnabled = next == Phase.Ready || next == Phase.Failed;
             PrimaryButton.IsEnabled = next != Phase.Running;
-            // Kommt man über "Neu installieren" hierher, geht es mit "Zurück" wieder zu den Knöpfen
-            string leave = installedDir != null ? "Zurück" : "Schließen";
+            // Coming here through "Reinstall", "Back" leads to the home screen again
+            string leave = installedDir != null ? L.T("Zurück", "Back") : L.T("Schließen", "Close");
             switch (next)
             {
                 case Phase.Ready:
-                    PrimaryButton.Content = "Installieren";
+                    PrimaryButton.Content = L.T("Installieren", "Install");
                     SecondaryButton.Content = leave;
-                    SetStatus("Lädt rund 400 MB, das dauert je nach Internet ein paar Minuten.", "MutedBrush");
+                    SetStatus(L.T("Lädt rund 400 MB, das dauert je nach Internet ein paar Minuten.",
+                        "Downloads about 400 MB, which takes a few minutes depending on your internet."), "MutedBrush");
                     ProgressLabel.Text = ReadyLabel();
                     ProgressValue.Text = "";
                     Bar.Value = 0;
                     break;
                 case Phase.Running:
-                    PrimaryButton.Content = "Installiere…";
-                    SecondaryButton.Content = "Abbrechen";
-                    SetStatus("Lass das Fenster einfach offen, der Rest läuft von selbst.", "MutedBrush");
+                    PrimaryButton.Content = L.T("Installiere…", "Installing…");
+                    SecondaryButton.Content = L.T("Abbrechen", "Cancel");
+                    SetStatus(L.T("Lass das Fenster einfach offen, der Rest läuft von selbst.",
+                        "Just leave the window open, the rest runs on its own."), "MutedBrush");
                     break;
                 case Phase.Done:
-                    ProgressLabel.Text = "Fertig";
+                    ProgressLabel.Text = L.T("Fertig", "Done");
                     ProgressValue.Text = "";
                     Bar.Value = 1;
                     break;
                 case Phase.Failed:
-                    PrimaryButton.Content = "Erneut versuchen";
+                    PrimaryButton.Content = L.T("Erneut versuchen", "Try again");
                     SecondaryButton.Content = leave;
                     SetStatus(message, "ErrorBrush");
                     break;
@@ -325,11 +335,12 @@ namespace EdenInstaller
         {
             FolderText.Text = installDir;
             FolderText.ToolTip = installDir;
-            DataText.Text = "Auf den Desktop kommt nur die Verknüpfung „Eden“. Keys und Firmware landen in "
-                + (opts.IsSandbox ? Path.Combine(opts.SandboxDir, "AppData", "eden") : "%APPDATA%\\eden") + ".";
+            string data = opts.IsSandbox ? Path.Combine(opts.SandboxDir, "AppData", "eden") : "%APPDATA%\\eden";
+            DataText.Text = L.T($"Auf den Desktop kommt nur die Verknüpfung „Eden“. Keys und Firmware landen in {data}.",
+                $"Only the “Eden” shortcut goes on the desktop. Keys and firmware go to {data}.");
         }
 
-        // ---------------------------------------------------------------- Knöpfe der Installation
+        // ---------------------------------------------------------------- Installation buttons
 
         void OnPrimaryClick(object sender, RoutedEventArgs e) => StartInstall();
 
@@ -351,7 +362,7 @@ namespace EdenInstaller
         {
             using (var dialog = new System.Windows.Forms.FolderBrowserDialog
             {
-                Description = "Wähle, wo der Eden-Ordner angelegt werden soll.",
+                Description = L.T("Wähle, wo der Eden-Ordner angelegt werden soll.", "Choose where the Eden folder should be created."),
                 ShowNewFolderButton = true,
                 SelectedPath = Path.GetDirectoryName(installDir),
             })
@@ -365,7 +376,7 @@ namespace EdenInstaller
             }
         }
 
-        // ---------------------------------------------------------------- Knöpfe der Startansicht
+        // ---------------------------------------------------------------- Home screen buttons
 
         void OnReinstall(object sender, RoutedEventArgs e) => ShowInstall();
 
@@ -374,7 +385,8 @@ namespace EdenInstaller
             string exe = BuildPaths().EdenExe;
             if (!File.Exists(exe))
             {
-                MessageBox.Show(this, "Die eden.exe fehlt. Bitte über „Neu installieren“ wieder einrichten.", "Eden Installer",
+                MessageBox.Show(this, L.T("Die eden.exe fehlt. Bitte über „Neu installieren“ wieder einrichten.",
+                        "eden.exe is missing. Please set it up again with “Reinstall”."), "Eden Installer",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -387,7 +399,7 @@ namespace EdenInstaller
 
         static void OpenFolder(string dir)
         {
-            Directory.CreateDirectory(dir);   // falls ihn jemand gelöscht hat
+            Directory.CreateDirectory(dir);   // in case someone deleted it
             Process.Start("explorer.exe", "\"" + dir + "\"");
         }
 
@@ -396,19 +408,19 @@ namespace EdenInstaller
             if (importing)
             {
                 importCts.Cancel();
-                AddGameTitle.Text = "Wird abgebrochen…";
+                AddGameTitle.Text = L.T("Wird abgebrochen…", "Cancelling…");
                 return;
             }
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
-                Title = "Spiele, Updates oder DLCs auswählen",
+                Title = L.T("Spiele, Updates oder DLCs auswählen", "Select games, updates or DLCs"),
                 Filter = GameImporter.DialogFilter,
                 Multiselect = true,
             };
             if (dialog.ShowDialog(this) == true) RunImport(dialog.FileNames);
         }
 
-        // ---------------------------------------------------------------- Spiel hinzufügen
+        // ---------------------------------------------------------------- Add game
 
         async void RunImport(string[] files)
         {
@@ -430,14 +442,15 @@ namespace EdenInstaller
             }
             catch (OperationCanceledException)
             {
-                Log.Write("Spiel hinzufügen abgebrochen");
-                ImportLabel.Text = "Abgebrochen";
+                Log.Write("Add game cancelled");
+                ImportLabel.Text = L.T("Abgebrochen", "Cancelled");
                 ImportValue.Text = "";
-                SetHomeStatus("Abgebrochen. Was schon einsortiert war, bleibt in den Ordnern.", "MutedBrush");
+                SetHomeStatus(L.T("Abgebrochen. Was schon einsortiert war, bleibt in den Ordnern.",
+                    "Cancelled. Whatever was already sorted in stays in the folders."), "MutedBrush");
             }
             catch (Exception ex)
             {
-                Log.Write("Fehler beim Hinzufügen: " + ex);
+                Log.Write("Error while adding: " + ex);
                 SetHomeStatus(EdenSetup.Describe(ex), "ErrorBrush");
             }
             finally
@@ -446,19 +459,19 @@ namespace EdenInstaller
                 SetImporting(false);
                 RefreshCounts();
                 if (closeAfterCancel) Close();
-                else if (opts.IsSandbox) FinishSandbox("5-hinzugefuegt.png", 0);
+                else if (opts.IsSandbox) FinishSandbox("5-added.png", 0);
             }
         }
 
         void SetImporting(bool on)
         {
-            AddGameTitle.Text = on ? "Abbrechen" : "Spiel hinzufügen";
-            AddGameHint.Text = on ? "Was schon einsortiert ist, bleibt drin." : AddGameHintText;
+            AddGameTitle.Text = on ? L.T("Abbrechen", "Cancel") : L.T("Spiel hinzufügen", "Add game");
+            AddGameHint.Text = on ? L.T("Was schon einsortiert ist, bleibt drin.", "Whatever is already sorted in stays.") : AddGameHintText;
             ReinstallButton.IsEnabled = !on;
             ImportPanel.Visibility = Visibility.Visible;
             if (on)
             {
-                ImportLabel.Text = "Wird vorbereitet";
+                ImportLabel.Text = L.T("Wird vorbereitet", "Preparing");
                 ImportValue.Text = "";
                 ImportBar.Value = 0;
             }
@@ -467,41 +480,41 @@ namespace EdenInstaller
         static string Summarize(ImportResult r)
         {
             var parts = new List<string>();
-            if (r.Games > 0) parts.Add(r.Games == 1 ? "1 Spiel" : r.Games + " Spiele");
-            if (r.Updates > 0) parts.Add(r.Updates == 1 ? "1 Update" : r.Updates + " Updates");
+            if (r.Games > 0) parts.Add(r.Games == 1 ? L.T("1 Spiel", "1 game") : r.Games + L.T(" Spiele", " games"));
+            if (r.Updates > 0) parts.Add(r.Updates == 1 ? L.T("1 Update", "1 update") : r.Updates + L.T(" Updates", " updates"));
             if (r.Dlcs > 0) parts.Add(r.Dlcs == 1 ? "1 DLC" : r.Dlcs + " DLCs");
 
-            string text = parts.Count > 0 ? "Fertig, " + JoinGerman(parts) + " einsortiert."
-                : r.Already > 0 ? "Fertig, alles lag schon im richtigen Ordner."
-                : "Nichts einsortiert.";
+            string text = parts.Count > 0 ? L.T("Fertig, " + L.Join(parts) + " einsortiert.", "Done, " + L.Join(parts) + " sorted in.")
+                : r.Already > 0 ? L.T("Fertig, alles lag schon im richtigen Ordner.", "Done, everything was already in the right folder.")
+                : L.T("Nichts einsortiert.", "Nothing sorted in.");
             if (r.Failed > 0)
-                text += r.Failed == 1 ? " Eine Datei ging nicht, siehe rote Zeile." : $" {r.Failed} Dateien gingen nicht, siehe rote Zeilen.";
+                text += r.Failed == 1
+                    ? L.T(" Eine Datei ging nicht, siehe rote Zeile.", " One file didn't work, see the red row.")
+                    : L.T($" {r.Failed} Dateien gingen nicht, siehe rote Zeilen.", $" {r.Failed} files didn't work, see the red rows.");
             if (r.Placed > 0 && Process.GetProcessesByName("eden").Length > 0)
-                text += " Eden ist gerade offen, starte es einmal neu, damit es die neuen Dateien findet.";
+                text += L.T(" Eden ist gerade offen, starte es einmal neu, damit es die neuen Dateien findet.",
+                    " Eden is open right now, restart it so it finds the new files.");
             return text;
         }
 
-        static string JoinGerman(List<string> parts) =>
-            parts.Count == 1 ? parts[0] : string.Join(", ", parts.Take(parts.Count - 1)) + " und " + parts[parts.Count - 1];
-
-        /// <summary>Ausgepackte Archive braucht keiner mehr. Auf Nachfrage in den Papierkorb, nie endgültig löschen.</summary>
+        /// <summary>Nobody needs unpacked archives anymore. On request to the recycle bin, never deleted for good.</summary>
         void OfferRecycle(List<string> archives)
         {
             var existing = archives.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             if (existing.Count == 0) return;
             if (opts.IsSandbox)
             {
-                Log.Write("Testmodus: keine Papierkorb-Frage für " + string.Join(", ", existing.Select(Path.GetFileName)));
+                Log.Write("Test mode: no recycle bin question for " + string.Join(", ", existing.Select(Path.GetFileName)));
                 return;
             }
 
             long size = existing.Sum(f => new FileInfo(f).Length);
             string list = string.Join("\n", existing.Take(8).Select(f => "• " + Path.GetFileName(f)))
-                + (existing.Count > 8 ? $"\n… und {existing.Count - 8} weitere" : "");
+                + (existing.Count > 8 ? L.T($"\n… und {existing.Count - 8} weitere", $"\n… and {existing.Count - 8} more") : "");
             var answer = MessageBox.Show(this,
-                $"Alles ist ausgepackt und einsortiert. Diese Archive brauchst du nicht mehr:\n\n{list}\n\n"
-                + $"Zusammen {EdenSetup.Size(size)}. In den Papierkorb verschieben?",
-                "Spiel hinzufügen", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                L.T($"Alles ist ausgepackt und einsortiert. Diese Archive brauchst du nicht mehr:\n\n{list}\n\nZusammen {EdenSetup.Size(size)}. In den Papierkorb verschieben?",
+                    $"Everything is unpacked and sorted in. You don't need these archives anymore:\n\n{list}\n\nTogether {EdenSetup.Size(size)}. Move them to the recycle bin?"),
+                L.T("Spiel hinzufügen", "Add game"), MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes) return;
 
             foreach (string file in existing)
@@ -509,20 +522,21 @@ namespace EdenInstaller
                 try
                 {
                     FileSystem.DeleteFile(file, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-                    Log.Write("In den Papierkorb: " + file);
+                    Log.Write("To the recycle bin: " + file);
                 }
-                catch (Exception ex) { Log.Write("Papierkorb ging nicht: " + file + " (" + ex.Message + ")"); }
+                catch (Exception ex) { Log.Write("Recycle bin failed: " + file + " (" + ex.Message + ")"); }
             }
         }
 
-        // ---------------------------------------------------------------- Schließen
+        // ---------------------------------------------------------------- Closing
 
         void OnClosing(object sender, CancelEventArgs e)
         {
             if (importing)
             {
                 e.Cancel = true;
-                if (!opts.IsSandbox && Confirm("Es werden gerade Spiele einsortiert. Wirklich abbrechen?"))
+                if (!opts.IsSandbox && Confirm(L.T("Es werden gerade Spiele einsortiert. Wirklich abbrechen?",
+                        "Games are being sorted in right now. Really cancel?")))
                 {
                     closeAfterCancel = true;
                     importCts.Cancel();
@@ -538,12 +552,12 @@ namespace EdenInstaller
             }
         }
 
-        bool ConfirmCancel() => Confirm("Die Installation läuft noch. Wirklich abbrechen?");
+        bool ConfirmCancel() => Confirm(L.T("Die Installation läuft noch. Wirklich abbrechen?", "The installation is still running. Really cancel?"));
 
         bool Confirm(string question) =>
             MessageBox.Show(this, question, "Eden Installer", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
 
-        // ---------------------------------------------------------------- IInstallerUi (kommt auch aus Hintergrund-Threads)
+        // ---------------------------------------------------------------- IInstallerUi (also called from background threads)
 
         public void SetStep(int index, StepState state, string detail)
         {
@@ -569,7 +583,7 @@ namespace EdenInstaller
             }));
         }
 
-        // ---------------------------------------------------------------- IImportUi (aus dem Hintergrund-Thread)
+        // ---------------------------------------------------------------- IImportUi (from the background thread)
 
         public void Progress(string label, double? fraction, string value)
         {
@@ -595,18 +609,18 @@ namespace EdenInstaller
             if (opts.IsSandbox)
                 dialog.ContentRendered += (s, e) => dialog.Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    Capture((FrameworkElement)dialog.Content, "6-frage.png");
-                    dialog.Choose(GameKind.Update);   // Testmodus antwortet selbst
+                    Capture((FrameworkElement)dialog.Content, "6-question.png");
+                    dialog.Choose(GameKind.Update);   // test mode answers on its own
                 }), DispatcherPriority.ApplicationIdle);
             dialog.ShowDialog();
             return dialog.Answer;
         });
 
-        // ---------------------------------------------------------------- Testmodus
+        // ---------------------------------------------------------------- Test mode
 
         async void RunSandbox()
         {
-            // Erst die Versionssuche abwarten, damit die Bilder die gefundenen Versionen zeigen
+            // Wait for the version search first, so the screenshots show the versions found
             try { await releases; } catch (OperationCanceledException) { }
             await Task.Delay(300);
             if (installedDir == null)
@@ -615,7 +629,7 @@ namespace EdenInstaller
                 StartInstall();
                 return;
             }
-            Capture("4-start-installiert.png");
+            Capture("4-home.png");
             if (opts.ImportFiles.Count > 0) RunImport(opts.ImportFiles.ToArray());
             else FinishSandbox(null, 0);
         }

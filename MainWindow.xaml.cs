@@ -34,6 +34,10 @@ namespace EdenInstaller
         ReleaseSet installedVersions;
         /// <summary>Search for the latest versions, runs in the background from the start.</summary>
         Task<ReleaseSet> releases;
+        /// <summary>Check for a newer installer on GitHub, null result if there is none.</summary>
+        Task<InstallerRelease> installerCheck;
+        InstallerRelease installerUpdate;
+        bool selfUpdating;
         bool onHome;
         Phase phase;
         CancellationTokenSource cts;
@@ -64,6 +68,9 @@ namespace EdenInstaller
             installedVersions = InstallState.LoadVersions(stateFile);
             releases = ReleaseFinder.FindAsync(CancellationToken.None);
             ShowReleasesWhenFound();
+            installerCheck = SelfUpdate.FindNewerAsync();
+            if (opts.UpdatedFrom != null) ShowUpdatedNote();
+            ShowInstallerUpdateWhenFound();
             MaxHeight = SystemParameters.WorkArea.Height;
 
             if (installedDir != null)
@@ -207,11 +214,73 @@ namespace EdenInstaller
                 : L.T("Bereit", "Ready");
         }
 
+        // ---------------------------------------------------------------- Installer self update
+
+        async void ShowInstallerUpdateWhenFound()
+        {
+            installerUpdate = await installerCheck;
+            if (installerUpdate == null) return;
+            SelfUpdateCard.Visibility = Visibility.Visible;
+            SelfUpdateTitle.Text = L.T($"Neue Version des Installers: v{installerUpdate.Version}", $"New installer version: v{installerUpdate.Version}");
+            SelfUpdateTitle.Foreground = new SolidColorBrush(Color.FromRgb(0xC4, 0xB5, 0xFD));
+            SetSelfUpdateDetail(L.T("Holt sich die neue Version und startet neu. Eden und deine Spiele bleiben, wie sie sind.",
+                "Downloads the new version and restarts. Eden and your games stay as they are."), "MutedBrush");
+            SelfUpdateButton.Content = L.T("Aktualisieren", "Update");
+            SelfUpdateButton.IsEnabled = true;
+            SelfUpdateButton.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>This instance was just swapped in by the self update.</summary>
+        void ShowUpdatedNote()
+        {
+            SelfUpdateCard.Visibility = Visibility.Visible;
+            SelfUpdateTitle.Text = L.T($"Der Installer ist jetzt auf v{SelfUpdate.Current}.", $"The installer is now on v{SelfUpdate.Current}.");
+            SelfUpdateTitle.Foreground = (Brush)FindResource("SuccessBrush");
+            SelfUpdateDetail.Visibility = Visibility.Collapsed;
+            SelfUpdateButton.Visibility = Visibility.Collapsed;
+        }
+
+        void SetSelfUpdateDetail(string text, string brushKey)
+        {
+            SelfUpdateDetail.Text = text;
+            SelfUpdateDetail.Foreground = (Brush)FindResource(brushKey);
+            SelfUpdateDetail.Visibility = Visibility.Visible;
+        }
+
+        async void OnSelfUpdate(object sender, RoutedEventArgs e)
+        {
+            if (installerUpdate == null || selfUpdating) return;
+            if (phase == Phase.Running || importing)
+            {
+                SetSelfUpdateDetail(L.T("Das geht, sobald die Installation oder das Einsortieren fertig ist.",
+                    "This works once the installation or the sorting is finished."), "MutedBrush");
+                return;
+            }
+            selfUpdating = true;
+            SelfUpdateButton.IsEnabled = false;
+            try
+            {
+                string args = opts.IsSandbox ? $"--sandbox \"{opts.SandboxDir}\"" : "";
+                await SelfUpdate.ApplyAsync(installerUpdate, args,
+                    text => Dispatcher.BeginInvoke(new Action(() => SetSelfUpdateDetail(text, "MutedBrush"))));
+                Application.Current.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Installer update failed: " + ex);
+                SetSelfUpdateDetail(EdenSetup.Describe(ex), "ErrorBrush");
+                SelfUpdateButton.Content = L.T("Erneut versuchen", "Try again");
+                SelfUpdateButton.IsEnabled = true;
+                selfUpdating = false;
+                if (opts.IsSandbox) FinishSandbox("7-update-error.png", 1);
+            }
+        }
+
         // ---------------------------------------------------------------- Installation
 
         async void StartInstall()
         {
-            if (phase == Phase.Running) return;
+            if (phase == Phase.Running || selfUpdating) return;
             foreach (var s in steps)
             {
                 s.State = StepState.Pending;
@@ -405,6 +474,7 @@ namespace EdenInstaller
 
         void OnAddGame(object sender, RoutedEventArgs e)
         {
+            if (selfUpdating) return;
             if (importing)
             {
                 importCts.Cancel();
@@ -623,6 +693,13 @@ namespace EdenInstaller
             // Wait for the version search first, so the screenshots show the versions found
             try { await releases; } catch (OperationCanceledException) { }
             await Task.Delay(300);
+            if (await installerCheck != null)
+            {
+                await Task.Delay(300);
+                Capture("7-update.png");
+                OnSelfUpdate(null, null);   // test mode updates on its own
+                return;
+            }
             if (installedDir == null)
             {
                 Capture("1-start.png");

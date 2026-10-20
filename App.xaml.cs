@@ -15,6 +15,7 @@ namespace EdenInstaller
             var opts = AppOptions.Parse(e.Args);
             Log.Init(opts.LogPath);
             Log.Write("UI language: " + (L.German ? "German" : "English"));
+            SelfUpdate.CleanUp();
 
             DispatcherUnhandledException += (s, a) =>
             {
@@ -41,6 +42,9 @@ namespace EdenInstaller
         /// <summary>Test mode: these files are sorted in through "Add game" right away (Eden has to be in the test folder).</summary>
         public readonly System.Collections.Generic.List<string> ImportFiles = new System.Collections.Generic.List<string>();
 
+        /// <summary>Set by the self update: this instance just replaced the previous exe.</summary>
+        public string UpdatedFrom;
+
         public bool IsSandbox => SandboxDir != null;
 
         public string LogPath => IsSandbox
@@ -57,6 +61,7 @@ namespace EdenInstaller
                 else if (a == "--fake-eden" && i + 1 < args.Length) o.FakeEdenExe = args[++i];
                 else if (a == "--import" && i + 1 < args.Length) o.ImportFiles.Add(Path.GetFullPath(args[++i]));
                 else if (a == "--lang" && i + 1 < args.Length) L.Force(args[++i]);   // de or en, otherwise Windows decides
+                else if (a == "--updated-from" && i + 1 < args.Length) o.UpdatedFrom = args[++i];
             }
             return o;
         }

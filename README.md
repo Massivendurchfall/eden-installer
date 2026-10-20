@@ -37,9 +37,13 @@ If there is a newer Eden version or a newer matching pair of firmware and keys, 
 
 Files are recognized by their content or by the title ID in the file name. If neither works, the installer asks. Single NSP or XCI files are moved. Archives stay where they are, at the end the installer asks whether to move them to the recycle bin.
 
-RAR and 7z are unpacked with 7-Zip if it is installed, otherwise with the tar that ships with Windows. For multi-part RAR archives 7-Zip should be installed ([7-zip.org](https://7-zip.org)).
+RAR and 7z, multi-part archives included, are unpacked with the 7-Zip that ships inside the installer. Nothing extra to install.
 
 The installer does not download any games.
+
+## Updating the installer
+
+At startup the installer checks this repository for a newer release of itself. If there is one, a note with an "Update" button appears at the top. It downloads the new exe, replaces itself and restarts. Eden and your games are not touched.
 
 ## Requirements
 
@@ -64,3 +68,7 @@ For testing without a real installation there is a test mode that redirects all 
 ```
 Eden-Installer.exe --sandbox <folder> [--fake-eden <exe>] [--import <file>] [--lang de|en]
 ```
+
+## Third-party software
+
+The exe contains [7-Zip](https://7-zip.org) 26.04 by Igor Pavlov, licensed under the GNU LGPL, some parts with the unRAR license restriction or BSD licenses. The full license text is in [7zip/License.txt](7zip/License.txt).

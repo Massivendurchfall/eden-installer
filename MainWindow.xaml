@@ -40,6 +40,24 @@
           </StackPanel>
         </Grid>
 
+        <!-- Newer installer version on GitHub, or the note right after updating -->
+        <Border x:Name="SelfUpdateCard" Style="{StaticResource Card}" BorderBrush="#4C3A7A" Margin="0,16,0,0"
+                Padding="14,10,10,10" Visibility="Collapsed">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+              <TextBlock x:Name="SelfUpdateTitle" FontSize="13.5" Foreground="#C4B5FD" TextWrapping="Wrap"/>
+              <TextBlock x:Name="SelfUpdateDetail" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                         Margin="0,2,0,0"/>
+            </StackPanel>
+            <Button x:Name="SelfUpdateButton" Grid.Column="1" Style="{StaticResource SmallButton}" VerticalAlignment="Center"
+                    Margin="12,0,0,0" Click="OnSelfUpdate"/>
+          </Grid>
+        </Border>
+
         <!-- Installation -->
         <StackPanel x:Name="InstallPanel">
 

@@ -12,7 +12,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>eden-installer.ico</ApplicationIcon>
     <Product>Eden Installer</Product>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <DebugType>none</DebugType>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
@@ -29,6 +29,12 @@
 
   <ItemGroup>
     <Resource Include="eden-logo.png" />
+  </ItemGroup>
+
+  <!-- 7-Zip ships inside the exe, so RAR and 7z (multi-part too) work without installing anything. License: 7zip\License.txt -->
+  <ItemGroup>
+    <EmbeddedResource Include="7zip\7z.exe" LogicalName="7z.exe" />
+    <EmbeddedResource Include="7zip\7z.dll" LogicalName="7z.dll" />
   </ItemGroup>
 
 </Project>

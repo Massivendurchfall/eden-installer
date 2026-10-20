@@ -228,7 +228,7 @@ namespace EdenInstaller
             string args = sevenZip
                 ? $"x -y -bd \"-o{outDir}\" \"{archive}\""
                 : $"-x -f \"{archive}\" -C \"{outDir}\"";
-            Log.Write($"  {Path.GetFileName(exe)} {args}");
+            Log.Write($"  {exe} {args}");
 
             var tail = new Queue<string>();
             DataReceivedEventHandler keep = (s, e) =>
@@ -606,9 +606,15 @@ namespace EdenInstaller
             return list;
         }
 
-        /// <summary>7-Zip if installed, otherwise the tar of Windows 10 and 11 (it handles RAR and 7z as well).</summary>
-        static (string exe, bool sevenZip)? FindTool()
+        /// <summary>
+        /// The 7-Zip inside the exe first (known version, handles RAR5 and multi-part archives), then an installed
+        /// 7-Zip, last the tar of Windows 10 and 11 (handles RAR and 7z, but not multi-part RAR).
+        /// </summary>
+        (string exe, bool sevenZip)? FindTool()
         {
+            string bundled = BundledSevenZip();
+            if (bundled != null) return (bundled, true);
+
             foreach (string root in new[]
             {
                 Environment.GetEnvironmentVariable("ProgramW6432"),
@@ -626,10 +632,40 @@ namespace EdenInstaller
             return null;
         }
 
-        string NewStagingFolder()
+        /// <summary>Unpacks 7z.exe and 7z.dll from the exe into the staging folder, which is deleted at the end anyway.</summary>
+        string BundledSevenZip()
+        {
+            string dir = Path.Combine(stagingDir, "7-Zip"), exe = Path.Combine(dir, "7z.exe");
+            if (File.Exists(exe)) return exe;
+            try
+            {
+                EnsureStagingRoot();
+                Directory.CreateDirectory(dir);
+                foreach (string name in new[] { "7z.dll", "7z.exe" })
+                    using (Stream src = typeof(GameImporter).Assembly.GetManifestResourceStream(name))
+                    {
+                        if (src == null) throw new FileNotFoundException("Resource missing: " + name);
+                        using (var dst = File.Create(Path.Combine(dir, name))) src.CopyTo(dst);
+                    }
+                return exe;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("  Bundled 7-Zip not usable: " + ex.Message);
+                TryDeleteDirectory(dir);
+                return null;
+            }
+        }
+
+        void EnsureStagingRoot()
         {
             if (!Directory.Exists(stagingDir))
                 Directory.CreateDirectory(stagingDir).Attributes |= FileAttributes.Hidden;
+        }
+
+        string NewStagingFolder()
+        {
+            EnsureStagingRoot();
             string dir = Path.Combine(stagingDir, (++stagingCounter).ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(dir);
             return dir;

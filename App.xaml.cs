@@ -44,6 +44,8 @@ namespace EdenInstaller
 
         /// <summary>Set by the self update: this instance just replaced the previous exe.</summary>
         public string UpdatedFrom;
+        /// <summary>Test mode: uninstall right away, "keep" keeps games and data, "all" deletes everything.</summary>
+        public string Uninstall;
 
         public bool IsSandbox => SandboxDir != null;
 
@@ -62,6 +64,7 @@ namespace EdenInstaller
                 else if (a == "--import" && i + 1 < args.Length) o.ImportFiles.Add(Path.GetFullPath(args[++i]));
                 else if (a == "--lang" && i + 1 < args.Length) L.Force(args[++i]);   // de or en, otherwise Windows decides
                 else if (a == "--updated-from" && i + 1 < args.Length) o.UpdatedFrom = args[++i];
+                else if (a == "--uninstall" && i + 1 < args.Length) o.Uninstall = args[++i].ToLowerInvariant();
             }
             return o;
         }

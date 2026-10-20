@@ -38,6 +38,7 @@ namespace EdenInstaller
         Task<InstallerRelease> installerCheck;
         InstallerRelease installerUpdate;
         bool selfUpdating;
+        bool uninstalling;
         bool onHome;
         Phase phase;
         CancellationTokenSource cts;
@@ -249,7 +250,7 @@ namespace EdenInstaller
 
         async void OnSelfUpdate(object sender, RoutedEventArgs e)
         {
-            if (installerUpdate == null || selfUpdating) return;
+            if (installerUpdate == null || selfUpdating || uninstalling) return;
             if (phase == Phase.Running || importing)
             {
                 SetSelfUpdateDetail(L.T("Das geht, sobald die Installation oder das Einsortieren fertig ist.",
@@ -280,7 +281,7 @@ namespace EdenInstaller
 
         async void StartInstall()
         {
-            if (phase == Phase.Running || selfUpdating) return;
+            if (phase == Phase.Running || selfUpdating || uninstalling) return;
             foreach (var s in steps)
             {
                 s.State = StepState.Pending;
@@ -449,6 +450,82 @@ namespace EdenInstaller
 
         void OnReinstall(object sender, RoutedEventArgs e) => ShowInstall();
 
+        async void OnUninstall(object sender, RoutedEventArgs e)
+        {
+            if (importing || selfUpdating || uninstalling) return;
+            var paths = BuildPaths();
+            string recordedData = InstallState.LoadDataDir(stateFile);
+            if (recordedData != null) paths.DataDir = recordedData;   // portable mode keeps its data inside the Eden folder
+
+            string refuse = Uninstaller.Refuse(paths);
+            if (refuse != null)
+            {
+                SetHomeStatus(refuse, "ErrorBrush");
+                if (opts.IsSandbox) FinishSandbox("9-refused.png", 1);
+                return;
+            }
+            if (!opts.IsSandbox && Process.GetProcessesByName("eden").Length > 0)
+            {
+                SetHomeStatus(L.T("Eden läuft gerade. Bitte schließe Eden zuerst.", "Eden is running. Please close Eden first."), "ErrorBrush");
+                return;
+            }
+
+            long games = Uninstaller.Size(paths.GamesDir) + Uninstaller.Size(paths.DlcDir), data = Uninstaller.Size(paths.DataDir);
+            var dialog = new UninstallDialog(this, paths, games, data);
+            if (opts.IsSandbox)
+                dialog.ContentRendered += (s, a) => dialog.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    bool keep = opts.Uninstall != "all";
+                    dialog.Preset(keep, keep);
+                    dialog.UpdateLayout();
+                    Capture((FrameworkElement)dialog.Content, "8-uninstall.png");
+                    dialog.Confirm();   // test mode answers on its own
+                }), DispatcherPriority.ApplicationIdle);
+            dialog.ShowDialog();
+            UninstallChoice choice = dialog.Answer;
+            if (choice == null) return;
+            if (!opts.IsSandbox && (!choice.KeepGames || !choice.KeepData)
+                && !Confirm(L.T("Die nicht angehakten Daten werden endgültig gelöscht und lassen sich nicht wiederherstellen. Wirklich deinstallieren?",
+                    "The unchecked data is deleted for good and can't be restored. Really uninstall?")))
+                return;
+
+            uninstalling = true;
+            AddGameButton.IsEnabled = ReinstallButton.IsEnabled = UninstallButton.IsEnabled = false;
+            SetHomeStatus(L.T("Wird deinstalliert…", "Uninstalling…"), "MutedBrush");
+            bool shortcut = Uninstaller.ShortcutIsOurs(paths);   // COM, so on the UI thread
+            List<string> failed;
+            try
+            {
+                failed = await Task.Run(() => Uninstaller.Run(paths, stateFile, choice, shortcut));
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Uninstall failed: " + ex);
+                SetHomeStatus(EdenSetup.Describe(ex), "ErrorBrush");
+                return;
+            }
+            finally
+            {
+                uninstalling = false;
+                AddGameButton.IsEnabled = ReinstallButton.IsEnabled = UninstallButton.IsEnabled = true;
+            }
+
+            // Back to the start: a new installation lands in the same folder and finds kept games again
+            installedDir = null;
+            installedVersions = null;
+            imports.Clear();
+            ImportPanel.Visibility = Visibility.Collapsed;
+            ShowInstall();
+            string message = L.T("Eden ist deinstalliert.", "Eden is uninstalled.");
+            if (choice.KeepGames) message += L.T(" Deine Spiele sind noch im Eden-Ordner.", " Your games are still in the Eden folder.");
+            if (choice.KeepData) message += L.T(" Spielstände und Einstellungen sind noch da.", " Saves and settings are still there.");
+            if (failed.Count > 0)
+                message += L.T($" {failed.Count} Dateien ließen sich nicht löschen, Details stehen im Log.",
+                    $" {failed.Count} items could not be deleted, details are in the log.");
+            SetStatus(message, failed.Count > 0 ? "ErrorBrush" : "SuccessBrush");
+            if (opts.IsSandbox) FinishSandbox("9-uninstalled.png", 0);
+        }
+
         void OnLaunchEden(object sender, RoutedEventArgs e)
         {
             string exe = BuildPaths().EdenExe;
@@ -474,7 +551,7 @@ namespace EdenInstaller
 
         void OnAddGame(object sender, RoutedEventArgs e)
         {
-            if (selfUpdating) return;
+            if (selfUpdating || uninstalling) return;
             if (importing)
             {
                 importCts.Cancel();
@@ -538,6 +615,7 @@ namespace EdenInstaller
             AddGameTitle.Text = on ? L.T("Abbrechen", "Cancel") : L.T("Spiel hinzufügen", "Add game");
             AddGameHint.Text = on ? L.T("Was schon einsortiert ist, bleibt drin.", "Whatever is already sorted in stays.") : AddGameHintText;
             ReinstallButton.IsEnabled = !on;
+            UninstallButton.IsEnabled = !on;
             ImportPanel.Visibility = Visibility.Visible;
             if (on)
             {
@@ -602,6 +680,11 @@ namespace EdenInstaller
 
         void OnClosing(object sender, CancelEventArgs e)
         {
+            if (uninstalling)
+            {
+                e.Cancel = true;   // deleting half of Eden would leave a mess
+                return;
+            }
             if (importing)
             {
                 e.Cancel = true;
@@ -707,7 +790,8 @@ namespace EdenInstaller
                 return;
             }
             Capture("4-home.png");
-            if (opts.ImportFiles.Count > 0) RunImport(opts.ImportFiles.ToArray());
+            if (opts.Uninstall != null) OnUninstall(null, null);
+            else if (opts.ImportFiles.Count > 0) RunImport(opts.ImportFiles.ToArray());
             else FinishSandbox(null, 0);
         }
 

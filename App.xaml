@@ -93,6 +93,44 @@
       <Setter Property="FontWeight" Value="Normal"/>
     </Style>
 
+    <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+      <Setter Property="Background" Value="#C2414F"/>
+    </Style>
+
+    <Style x:Key="DarkCheck" TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Grid Background="Transparent">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="Box" Width="20" Height="20" CornerRadius="6" Background="#231F2B" BorderBrush="#4A4458"
+                      BorderThickness="1.5" VerticalAlignment="Top" Margin="0,1,0,0">
+                <Path x:Name="Mark" Data="M 5,10.5 L 8.5,14 L 15,6.5" Stroke="White" StrokeThickness="2.2"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Visibility="Collapsed"/>
+              </Border>
+              <ContentPresenter Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Top" RecognizesAccessKey="False"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Box" Property="BorderBrush" Value="#6A6280"/>
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Box" Property="Background" Value="{StaticResource AccentBrush}"/>
+                <Setter TargetName="Box" Property="BorderThickness" Value="0"/>
+                <Setter TargetName="Mark" Property="Visibility" Value="Visible"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style x:Key="SmallButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
       <Setter Property="FontSize" Value="13"/>
       <Setter Property="Padding" Value="14,6"/>

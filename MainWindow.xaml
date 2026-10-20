@@ -208,8 +208,12 @@
                 <TextBlock x:Name="NewsText" FontSize="12" Foreground="#C4B5FD" TextWrapping="Wrap" Margin="0,5,0,0"
                            Visibility="Collapsed"/>
               </StackPanel>
-              <Button x:Name="ReinstallButton" Grid.Column="1" Style="{StaticResource SmallButton}"
-                      Content="{local:T De='Neu installieren', En='Reinstall'}" VerticalAlignment="Center" Margin="12,0,0,0" Click="OnReinstall"/>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0,0,0">
+                <Button x:Name="ReinstallButton" Style="{StaticResource SmallButton}"
+                        Content="{local:T De='Neu installieren', En='Reinstall'}" Click="OnReinstall"/>
+                <Button x:Name="UninstallButton" Style="{StaticResource SmallButton}" Margin="0,6,0,0"
+                        Content="{local:T De='Deinstallieren', En='Uninstall'}" Click="OnUninstall"/>
+              </StackPanel>
             </Grid>
           </Border>
 

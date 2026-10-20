@@ -32,6 +32,7 @@ Once Eden is set up, the installer opens straight on the home screen:
 - **Add game**: pick ZIP, RAR, 7z, NSP, NSZ, XCI or XCZ files, several at once if you like. Multi-part archives (`.part1.rar`, `.part2.rar` and so on) are unpacked together. Base games go to `Games`, updates and DLCs to `Updates and DLCs`.
 - **Start Eden**, **Open Games**, **Open Updates**
 - **Reinstall**, in case something breaks or there is something new
+- **Uninstall**: removes Eden and the desktop shortcut. Two checkboxes decide whether your games and your saves and settings stay, both are checked by default.
 
 If there is a newer Eden version or a newer matching pair of firmware and keys, the home screen says so. "Reinstall" brings it in, your games stay where they are.
 
@@ -66,7 +67,7 @@ The result is `dist\Eden-Installer.exe`.
 For testing without a real installation there is a test mode that redirects all paths into one folder:
 
 ```
-Eden-Installer.exe --sandbox <folder> [--fake-eden <exe>] [--import <file>] [--lang de|en]
+Eden-Installer.exe --sandbox <folder> [--fake-eden <exe>] [--import <file>] [--uninstall keep|all] [--lang de|en]
 ```
 
 ## Third-party software

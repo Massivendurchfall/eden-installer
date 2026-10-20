@@ -75,6 +75,9 @@ namespace EdenInstaller
         /// <summary>The recorded Eden folder, or null.</summary>
         public static string Load(string file) => Read(file).TryGetValue("InstallDir", out string dir) ? dir : null;
 
+        /// <summary>The recorded data folder (differs from %APPDATA%\eden in portable mode), or null.</summary>
+        public static string LoadDataDir(string file) => Read(file).TryGetValue("DataDir", out string dir) && dir.Length > 0 ? dir : null;
+
         /// <summary>Installed versions (without links), or null if the state file has none.</summary>
         public static ReleaseSet LoadVersions(string file)
         {
